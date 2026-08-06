@@ -3,7 +3,7 @@
 Priorities are guided by the principles in the [README](../README.md):
 performance first, no mock features, maintainability for the next ten years.
 
-## v0.1 — current
+## v0.1 — current (v0.1.1 released: Windows support + bug fixes)
 
 - [x] Library: recursive scanning, incremental rescans, folder watching
 - [x] SQLite index (tracks, albums, artists, playlists)
@@ -15,7 +15,9 @@ performance first, no mock features, maintainability for the next ten years.
 - [x] System tray, MPRIS, mini player, notifications
 - [x] Themes (system/light/dark), accent colors, i18n (en/es)
 - [x] Packaging: AppImage, deb, icons, desktop file, MIME
-- [x] CI pipeline with tests, lint, and bundle artifacts
+- [x] Windows support (v0.1.1): NSIS installer, WebView2 runtime, portable
+  `harmonia.exe`, Start Menu/desktop shortcuts, file associations
+- [x] CI pipeline with tests, lint, and bundle artifacts (Linux + Windows)
 
 ## v0.2 — audio & metadata depth
 
@@ -45,7 +47,7 @@ performance first, no mock features, maintainability for the next ten years.
 - AI-generated playlists from listening history
 - Lyrics editor and community lyrics sync
 - Library consolidation / folder merge tools
-- Non-Linux platforms (macOS, Windows) via Tauri
+- macOS support via Tauri (Windows shipped in v0.1.1)
 
 ### Note on visuals
 

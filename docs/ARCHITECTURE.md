@@ -14,6 +14,7 @@ library logic and the desktop/audio layer**.
 │               src-tauri (Tauri 2 + rodio)                  │
 │   commands.rs  tray.rs  paths.rs  state.rs                 │
 │   engine.rs (audio thread)  dsp_source.rs                  │
+│   Linux: WebKitGTK · Windows: WebView2                     │
 ├────────────────────────────────────────────────────────────┤
 │              harmonia-core (pure Rust, no UI)              │
 │   db.rs  metadata.rs  library.rs  playlists.rs  watcher.rs │
@@ -21,12 +22,20 @@ library logic and the desktop/audio layer**.
 └────────────────────────────────────────────────────────────┘
 ```
 
+The shell is packaged per platform: on Linux as a `.deb` and AppImage (plus a
+raw binary), and on Windows as an NSIS installer (`Harmonia_*_x64-setup.exe`)
+and a portable `harmonia.exe`. The Windows installer adds Start Menu and
+desktop shortcuts, an uninstaller, and registers MP3/FLAC/OGG/WAV/M4A file
+associations so double-clicking a music file opens Harmonia. Desktop
+integration (window geometry persistence, last-section restore, clean
+shutdown, notifications) is shared across platforms.
+
 ## Why two crates?
 
 1. **Testability.** `harmonia-core` has zero UI/audio dependencies: it compiles
    and runs on any machine and is covered by unit tests that run in CI. The
-   Tauri shell needs WebKit/ALSA dev headers and cannot be compiled in every
-   environment.
+   Tauri shell needs WebKit/ALSA dev headers (Linux) or the WebView2 SDK
+   (Windows) and cannot be compiled in every environment.
 2. **Honest boundaries.** Audio output and the database should not be entangled.
    The core defines *what* a library is; the shell defines *how* it sounds.
 3. **Reusability.** The core could later power a CLI, a different frontend, or
@@ -36,8 +45,9 @@ library logic and the desktop/audio layer**.
 
 - **Rust** gives us memory safety without a GC — important for an audio engine
   that must never stutter or crash on malformed files.
-- **Tauri 2** ships a small native webview (WebKitGTK) instead of bundling a
-  browser, keeping idle memory below 150 MB and startup under 1 second.
+- **Tauri 2** ships a small native webview — WebKitGTK on Linux, WebView2
+  (Edge runtime) on Windows — instead of bundling a browser, keeping idle
+  memory below 150 MB and startup under 1 second.
 - **React** for the UI gives fast iteration and a rich ecosystem for
   virtualization and animation, while the heavy lifting happens in Rust.
 - **rodio** (with the `symphonia` backend) decodes MP3/FLAC/OGG/AAC/M4A/WAV
