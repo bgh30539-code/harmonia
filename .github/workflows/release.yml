@@ -126,10 +126,12 @@ jobs:
           draft: true
           name: "Harmonia ${{ github.ref_name }}"
           body_path: release-notes.md
+          # Cargo workspace root is the repo root, so bundles land in
+          # target/ (not src-tauri/target/).
           files: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/harmonia
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
+            target/release/harmonia
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
