@@ -45,6 +45,19 @@ pub struct Settings {
     pub cache_size_mb: u64,
     /// Whether the UI is currently in mini-player mode (single small window).
     pub mini_player: bool,
+    /// Hide to the system tray when the window close button is pressed instead
+    /// of quitting. Disabled on Windows by default, where the native
+    /// convention is for the close button to terminate the application.
+    pub close_to_tray: bool,
+    /// Remembered main-window geometry, restored on the next launch
+    /// (desktop integration). Values are physical pixels.
+    pub window_width: f64,
+    pub window_height: f64,
+    pub window_x: Option<f64>,
+    pub window_y: Option<f64>,
+    pub window_maximized: bool,
+    /// Show a desktop notification when the playing track changes.
+    pub notify_on_track_change: bool,
 }
 
 impl Default for Settings {
@@ -69,6 +82,13 @@ impl Default for Settings {
             mono: false,
             cache_size_mb: 512,
             mini_player: false,
+            close_to_tray: cfg!(not(windows)),
+            window_width: 1280.0,
+            window_height: 820.0,
+            window_x: None,
+            window_y: None,
+            window_maximized: false,
+            notify_on_track_change: true,
         }
     }
 }

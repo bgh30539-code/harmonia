@@ -22,6 +22,7 @@ use crate::models::{
     Album, Artist, Folder, LibraryStats, Playlist, RepeatMode, SearchFilters, SortField, Track,
 };
 use crate::playlists::smart_playlist_where;
+use crate::settings::Settings;
 use crate::util::now_secs;
 
 const SCHEMA: &str = r#"
@@ -192,13 +193,16 @@ impl Database {
     }
 
     fn init_schema(&self) -> CoreResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute_batch(SCHEMA)?;
         Ok(())
     }
 
+    /// A poisoned mutex (a panicked thread died while holding the lock) must
+    /// never take the whole application down with it — recover the lock and
+    /// continue. The connection itself stays usable.
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     // ------------------------------------------------------------------
@@ -237,6 +241,32 @@ impl Database {
             out.insert(k, v);
         }
         Ok(out)
+    }
+
+    /// Loads the persisted [`Settings`] blob.
+    ///
+    /// Corruption protection: if the stored JSON is missing or unparseable
+    /// (a crash during a previous write, a partial upgrade, manual edits), the
+    /// settings fall back to defaults **and** `library_folders` is re-seeded
+    /// from the `folders` table — the authoritative list of library roots.
+    /// This guarantees a corrupted settings row never silently forgets the
+    /// user's music folders.
+    pub fn load_settings(&self) -> CoreResult<Settings> {
+        let mut settings: Settings = self
+            .get_setting("settings")?
+            .as_deref()
+            .and_then(|raw| serde_json::from_str(raw).ok())
+            .unwrap_or_default();
+        if settings.library_folders.is_empty() {
+            settings.library_folders = self.list_folders()?.into_iter().map(|f| f.path).collect();
+        }
+        Ok(settings)
+    }
+
+    /// Serializes and stores the settings blob in a single atomic SQL write.
+    pub fn save_settings(&self, settings: &Settings) -> CoreResult<()> {
+        let json = serde_json::to_string(settings)?;
+        self.set_setting("settings", &json)
     }
 
     // ------------------------------------------------------------------
@@ -1142,5 +1172,58 @@ mod tests {
         assert_eq!(db.get_setting("theme").unwrap().as_deref(), Some("dark"));
         db.set_repeat_mode(RepeatMode::All).unwrap();
         assert_eq!(db.get_repeat_mode().unwrap(), RepeatMode::All);
+    }
+
+    #[test]
+    fn settings_save_load_roundtrip() {
+        let db = Database::open_in_memory().unwrap();
+        let settings = Settings {
+            volume: 0.42,
+            library_folders: vec!["/music/a".into(), "/music/b".into()],
+            close_to_tray: false,
+            ..Settings::default()
+        };
+        db.save_settings(&settings).unwrap();
+        let loaded = db.load_settings().unwrap();
+        assert_eq!(loaded.volume, 0.42);
+        assert_eq!(loaded.library_folders, settings.library_folders);
+        assert!(!loaded.close_to_tray);
+    }
+
+    #[test]
+    fn corrupted_settings_fall_back_to_folders_table() {
+        let db = Database::open_in_memory().unwrap();
+        // The library roots live in the folders table — the settings blob must
+        // never be the only copy.
+        db.add_folder("/music/a").unwrap();
+        db.add_folder("/music/b").unwrap();
+        // Simulate a truncated/corrupted settings row from a crashed write.
+        db.set_setting("settings", "{\"theme\": \"dark\", \"volu")
+            .unwrap();
+        let settings = db.load_settings().unwrap();
+        assert_eq!(
+            settings.library_folders,
+            vec!["/music/a".to_string(), "/music/b".to_string()]
+        );
+        // And a fully missing row behaves the same way.
+        let db2 = Database::open_in_memory().unwrap();
+        db2.add_folder("/muzak").unwrap();
+        let settings = db2.load_settings().unwrap();
+        assert_eq!(settings.library_folders, vec!["/muzak".to_string()]);
+    }
+
+    #[test]
+    fn unknown_settings_fields_are_tolerated() {
+        let db = Database::open_in_memory().unwrap();
+        // Older or newer versions may carry extra keys; serde must ignore them.
+        db.set_setting(
+            "settings",
+            r#"{"volume":0.5,"libraryFolders":["/m"],"someFutureField":true}"#,
+        )
+        .unwrap();
+        let settings = db.load_settings().unwrap();
+        assert_eq!(settings.volume, 0.5);
+        assert_eq!(settings.library_folders, vec!["/m".to_string()]);
+        assert!(settings.close_to_tray); // default for non-Windows
     }
 }
