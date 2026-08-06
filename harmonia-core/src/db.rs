@@ -10,6 +10,8 @@
 //! - Prepared statements are re-prepared per call; SQLite's statement cache
 //!   makes this cheap, and it keeps the API simple and borrow-safe.
 //! - Bulk inserts happen inside explicit transactions (batches).
+//! - Search uses an FTS5 index (`tracks_fts`) maintained by triggers, so
+//!   full-text queries never scan the `tracks` table.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -79,6 +81,33 @@ CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played);
 CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count);
 CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder);
 
+-- FTS5 index backing full-text search. Triggers keep it in sync with every
+-- write to the indexed columns (insert, delete, and targeted updates); the
+-- trigger on UPDATE only fires when one of the indexed columns actually
+-- changes, so favorite/play-count tweaks never touch the index.
+-- Databases created before this index existed are backfilled once in
+-- init_schema (marker key `fts_indexed` in the settings table).
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+    title, artist, album, album_artist, genre, composer, format,
+    tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ai AFTER INSERT ON tracks BEGIN
+    INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, composer, format)
+    VALUES (new.id, new.title, new.artist, new.album, new.album_artist, new.genre, new.composer, new.format);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ad AFTER DELETE ON tracks BEGIN
+    DELETE FROM tracks_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_au AFTER UPDATE OF
+    title, artist, album, album_artist, genre, composer, format ON tracks BEGIN
+    DELETE FROM tracks_fts WHERE rowid = old.id;
+    INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, composer, format)
+    VALUES (new.id, new.title, new.artist, new.album, new.album_artist, new.genre, new.composer, new.format);
+END;
+
 CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -132,6 +161,13 @@ pub struct TrackUpsert {
     pub replay_gain_db: Option<f32>,
     pub lyrics: Option<String>,
     pub lyrics_synced: Option<String>,
+}
+
+/// Neutralises FTS5 query syntax in a raw user term so it is treated as a
+/// literal phrase. Double quotes are doubled (the FTS5 escape rule) and line
+/// breaks are stripped (not allowed inside quoted strings).
+fn fts_escape(term: &str) -> String {
+    term.replace('"', "\"\"").replace(['\n', '\r'], " ")
 }
 
 fn track_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -195,6 +231,26 @@ impl Database {
     fn init_schema(&self) -> CoreResult<()> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute_batch(SCHEMA)?;
+        // Databases created before the FTS5 index existed need a one-time
+        // backfill. New writes stay in sync via the triggers in SCHEMA, so
+        // this only ever needs to run once per database.
+        let indexed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'fts_indexed'",
+            [],
+            |r| r.get(0),
+        )?;
+        if indexed == 0 {
+            // Run the backfill and the marker write atomically: a crash in
+            // between would leave the index populated without the marker, and
+            // the next open would re-index every row (duplicate postings).
+            conn.execute_batch(
+                "BEGIN;\n\
+                 INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, composer, format)\n\
+                 SELECT id, title, artist, album, album_artist, genre, composer, format FROM tracks;\n\
+                 INSERT INTO settings(key, value) VALUES ('fts_indexed', '1');\n\
+                 COMMIT;",
+            )?;
+        }
         Ok(())
     }
 
@@ -608,9 +664,11 @@ impl Database {
         Ok(out)
     }
 
-    /// Full-text-ish search across the searchable text columns, combined with
-    /// structured filters. Multi-word queries require every word to match
-    /// somewhere in the track text fields.
+    /// Full-text search backed by the FTS5 index, combined with structured
+    /// filters. Multi-word queries require every word to match somewhere in
+    /// the track text fields. Each word is matched case-insensitively as a
+    /// word prefix, so "roc" finds "Rock Anthem"; FTS5 syntax characters in
+    /// the user input are neutralised by quoting.
     pub fn search(
         &self,
         query: &str,
@@ -620,17 +678,20 @@ impl Database {
         let mut conditions: Vec<String> = Vec::new();
         let mut params: Vec<Value> = Vec::new();
 
-        for term in query.split_whitespace().filter(|t| !t.is_empty()) {
-            let like = format!("%{}%", crate::util::escape_like(term));
-            conditions.push(
-                "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\' \
-                 OR album_artist LIKE ? ESCAPE '\\' OR genre LIKE ? ESCAPE '\\' OR composer LIKE ? ESCAPE '\\' \
-                 OR format LIKE ? ESCAPE '\\')"
-                    .to_string(),
-            );
-            for _ in 0..7 {
-                params.push(Value::Text(like.clone()));
-            }
+        let terms: Vec<&str> = query.split_whitespace().filter(|t| !t.is_empty()).collect();
+        if !terms.is_empty() {
+            // Every term must match (FTS5 implicit AND). Quoting neutralises
+            // FTS5 query syntax; the trailing `*` turns each term into a word
+            // prefix query, mirroring the common `%term%` LIKE use case while
+            // using the index instead of a full table scan.
+            let match_expr = terms
+                .iter()
+                .map(|t| format!("\"{}\"*", fts_escape(t)))
+                .collect::<Vec<_>>()
+                .join(" ");
+            conditions
+                .push("id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)".to_string());
+            params.push(Value::Text(match_expr));
         }
 
         if let Some(genre) = &filters.genre {
@@ -1067,6 +1128,189 @@ mod tests {
         let found = db.search("", &filters, 50).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].title, "Jazz Mood");
+    }
+
+    #[test]
+    fn fts_index_stays_in_sync_across_writes() {
+        let db = Database::open_in_memory().unwrap();
+        upsert(
+            &db,
+            "/m/r1.mp3",
+            "Rock Anthem",
+            "The Band",
+            "Greatest",
+            "Pop",
+        );
+        upsert(
+            &db,
+            "/m/j1.mp3",
+            "Jazz Mood",
+            "Cool Cats",
+            "Late Night",
+            "Jazz",
+        );
+
+        // Title, artist, album and genre columns are all searchable.
+        assert_eq!(
+            db.search("rock", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            db.search("anthem", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        // Multi-word AND across artist tokens.
+        assert_eq!(
+            db.search("the band", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            db.search("late night", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        // Every word must match somewhere: one good, one bad word => no hit.
+        assert_eq!(
+            db.search("rock jazz", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Writes to non-indexed columns must NOT touch the index (the AU
+        // trigger only fires on UPDATE OF the indexed columns).
+        let jazz_id = db.get_track_by_path("/m/j1.mp3").unwrap().unwrap().id;
+        db.set_favorite(jazz_id, true).unwrap();
+        db.mark_played(jazz_id).unwrap();
+        assert_eq!(
+            db.search("jazz", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Renaming a track must move its index entry (UPDATE trigger). The
+        // other columns (artist/album/genre) keep no trace of "rock".
+        upsert(
+            &db,
+            "/m/r1.mp3",
+            "Country Roads",
+            "The Band",
+            "Greatest",
+            "Pop",
+        );
+        assert_eq!(
+            db.search("rock", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            db.search("country", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Deleting a track must remove its index entry (DELETE trigger).
+        db.delete_track_by_path("/m/r1.mp3").unwrap();
+        assert_eq!(
+            db.search("country", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn fts_prefix_and_special_character_matching() {
+        let db = Database::open_in_memory().unwrap();
+        upsert(
+            &db,
+            "/m/u.mp3",
+            "Rock \"Unplugged\" (Live)",
+            "A & B",
+            "Session",
+            "Rock",
+        );
+        // Word-prefix matching mirrors the old %term% LIKE for prefix inputs.
+        assert_eq!(
+            db.search("roc", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        // Quotes and parentheses in user input are treated literally.
+        assert_eq!(
+            db.search("unplugged", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            db.search("rock live", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            db.search("rock jazz", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn fts_backfills_existing_databases_on_upgrade() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("old.db");
+        {
+            // A database created before the FTS5 index existed: tracks table
+            // with data, no tracks_fts table, no backfill marker.
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE tracks (\
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                    path TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '',\
+                    artist TEXT NOT NULL DEFAULT '', album TEXT NOT NULL DEFAULT '',\
+                    album_artist TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '',\
+                    composer TEXT NOT NULL DEFAULT '', year INTEGER, track_no INTEGER,\
+                    disc_no INTEGER, duration_ms INTEGER NOT NULL DEFAULT 0, bitrate INTEGER,\
+                    sample_rate INTEGER, channels INTEGER, format TEXT NOT NULL DEFAULT '',\
+                    folder TEXT NOT NULL DEFAULT '', file_size INTEGER NOT NULL DEFAULT 0,\
+                    mtime INTEGER NOT NULL DEFAULT 0, art_hash TEXT,\
+                    date_added INTEGER NOT NULL DEFAULT 0, last_played INTEGER,\
+                    play_count INTEGER NOT NULL DEFAULT 0, favorite INTEGER NOT NULL DEFAULT 0,\
+                    replay_gain_db REAL, lyrics TEXT, lyrics_synced TEXT\
+                );\
+                CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\
+                INSERT INTO tracks (path, title, artist, album, genre, format, folder, file_size, mtime, date_added)\
+                VALUES ('/m/old.mp3', 'Oldies Gold', 'Vintage', 'Retro', 'Pop', 'mp3', '/m', 1, 1, 1);",
+            )
+            .unwrap();
+        }
+        // Opening with the current code must create the index and backfill it.
+        let db = Database::open(&db_path).unwrap();
+        assert_eq!(
+            db.search("oldies", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            db.search("vintage", &SearchFilters::default(), 50)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
