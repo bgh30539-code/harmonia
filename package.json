@@ -8,6 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "check:system": "node scripts/check-system.mjs",
+    "check:system:sh": "bash scripts/check-system.sh",
+    "test:system": "node --test scripts/check-system.test.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

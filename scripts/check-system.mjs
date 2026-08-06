@@ -10,14 +10,20 @@
 // Usage:
 //   node scripts/check-system.mjs          # exit 0 if ready, 1 if missing deps
 //   node scripts/check-system.mjs --json   # machine-readable JSON on stdout
+//   npm run test:system                    # unit tests (node:test, mocked probes)
 //
-// Every probe respects an env override so the failure path is testable:
-//   HARMONIA_PKG_CONFIG=/nonexistent node scripts/check-system.mjs
+// The module is deliberately structured for testability:
+//   - `probes` is an exported object holding the probe functions, so tests can
+//     replace them with `mock.method(probes, "hasCommand", ...)`.
+//   - `runCheck()` is the pure decision function: it takes options and returns
+//     `{ output, exitCode }` without touching `process`.
+//   - `main()` only runs when the file is executed directly, never on import.
 
 import { execFileSync } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const APT_PACKAGES = {
+export const APT_PACKAGES = {
   pkgConfig: "pkg-config",
   cc: "build-essential",
   webkit: "libwebkit2gtk-4.1-dev",
@@ -30,121 +36,123 @@ const APT_PACKAGES = {
   fakeroot: "fakeroot",
 };
 
-// --- probe helpers ----------------------------------------------------------
+// --- probe helpers (exported so tests can mock them) ------------------------
 
-function hasCommand(cmd) {
-  try {
-    execFileSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
+export const probes = {
+  hasCommand(cmd) {
+    try {
+      execFileSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  },
 
-function pkgConfigExists(module) {
-  const bin = process.env.HARMONIA_PKG_CONFIG || "pkg-config";
-  if (!hasCommand(bin)) return false;
-  try {
-    execFileSync(bin, ["--exists", module], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
+  pkgConfigExists(module) {
+    const bin = process.env.HARMONIA_PKG_CONFIG || "pkg-config";
+    if (!this.hasCommand(bin)) return false;
+    try {
+      execFileSync(bin, ["--exists", module], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  },
 
-function headerExists(path) {
-  try {
-    accessSync(path, constants.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+  headerExists(path) {
+    try {
+      accessSync(path, constants.R_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
 
 // --- check definitions ------------------------------------------------------
 // Each entry: { id, label, required, check, missingHint }
 // `required: true` fails the build; `required: false` is advisory only.
 
-const CHECKS = [
+export const CHECKS = [
   {
     id: "pkgConfig",
     label: "pkg-config (locates native libraries)",
     required: true,
-    check: () => hasCommand(process.env.HARMONIA_PKG_CONFIG || "pkg-config"),
+    check: () => probes.hasCommand(process.env.HARMONIA_PKG_CONFIG || "pkg-config"),
     missingHint: "Install the 'pkg-config' package.",
   },
   {
     id: "cc",
     label: "C compiler (build-essential / gcc)",
     required: true,
-    check: () => hasCommand("cc") || hasCommand("gcc"),
+    check: () => probes.hasCommand("cc") || probes.hasCommand("gcc"),
     missingHint: "Install 'build-essential' (Debian/Ubuntu) or the equivalent.",
   },
   {
     id: "webkit",
     label: "WebKitGTK 4.1 (Tauri webview)",
     required: true,
-    check: () => pkgConfigExists("webkit2gtk-4.1"),
+    check: () => probes.pkgConfigExists("webkit2gtk-4.1"),
     missingHint: "Install 'libwebkit2gtk-4.1-dev'.",
   },
   {
     id: "gtk3",
     label: "GTK 3 development headers",
     required: true,
-    check: () => pkgConfigExists("gtk+-3.0"),
+    check: () => probes.pkgConfigExists("gtk+-3.0"),
     missingHint: "Install 'libgtk-3-dev'.",
   },
   {
     id: "alsa",
     label: "ALSA headers (audio output)",
     required: true,
-    check: () => pkgConfigExists("alsa"),
+    check: () => probes.pkgConfigExists("alsa"),
     missingHint: "Install 'libasound2-dev' (also needs libasound2 at runtime).",
   },
   {
     id: "rsvg",
     label: "librsvg (icon rendering)",
     required: true,
-    check: () => pkgConfigExists("librsvg-2.0"),
+    check: () => probes.pkgConfigExists("librsvg-2.0"),
     missingHint: "Install 'librsvg2-dev'.",
   },
   {
     id: "openssl",
     label: "OpenSSL headers",
     required: true,
-    check: () => pkgConfigExists("openssl"),
+    check: () => probes.pkgConfigExists("openssl"),
     missingHint: "Install 'libssl-dev'.",
   },
   {
     id: "appindicator",
     label: "AppIndicator (system tray)",
     required: true,
-    check: () => pkgConfigExists("ayatana-appindicator3-0.1"),
+    check: () => probes.pkgConfigExists("ayatana-appindicator3-0.1"),
     missingHint: "Install 'libayatana-appindicator3-dev'.",
   },
   {
     id: "xdo",
     label: "libxdo (global media-key shortcuts)",
     required: true,
-    check: () => headerExists("/usr/include/xdo.h"),
+    check: () => probes.headerExists("/usr/include/xdo.h"),
     missingHint: "Install 'libxdo-dev' (header /usr/include/xdo.h).",
   },
   {
     id: "fakeroot",
     label: "fakeroot (deb bundling)",
     required: false,
-    check: () => hasCommand("fakeroot"),
+    check: () => probes.hasCommand("fakeroot"),
     missingHint: "Install 'fakeroot' if you need to build .deb packages.",
   },
 ];
 
 // --- output -----------------------------------------------------------------
 
-function missing(checks) {
+export function missing(checks) {
   return checks.filter((c) => !c.check());
 }
 
-function aptCommand(missingIds) {
+export function aptCommand(missingIds) {
   const pkgs = missingIds
     .map((id) => APT_PACKAGES[id])
     .filter(Boolean)
@@ -152,7 +160,7 @@ function aptCommand(missingIds) {
   return `sudo apt-get install -y ${pkgs}`;
 }
 
-function renderHuman(missingChecks) {
+export function renderHuman(missingChecks) {
   const lines = [];
   lines.push("");
   lines.push("Harmonia is missing required system packages.");
@@ -173,7 +181,7 @@ function renderHuman(missingChecks) {
   return lines.join("\n");
 }
 
-function renderJson(missingChecks, ok) {
+export function renderJson(missingChecks, ok) {
   return JSON.stringify(
     {
       ok,
@@ -190,32 +198,51 @@ function renderJson(missingChecks, ok) {
   );
 }
 
-function main() {
-  const json = process.argv.includes("--json");
+/**
+ * Runs the checks and returns `{ output, exitCode }` without touching
+ * `process`, so it is directly unit-testable.
+ *
+ * @param {{ json?: boolean }} [options]
+ */
+export function runCheck(options = {}) {
+  const json = Boolean(options.json);
   const missingChecks = missing(CHECKS);
   const requiredMissing = missingChecks.filter((c) => c.required);
 
   // A non-zero exit is what stops the `&&` chain in tauri.conf.json, so it
   // must be set in every mode, not just the human one.
-  if (requiredMissing.length > 0) {
-    process.exitCode = 1;
-  }
+  const exitCode = requiredMissing.length > 0 ? 1 : 0;
 
+  let output;
   if (json) {
-    process.stdout.write(`${renderJson(missingChecks, requiredMissing.length === 0)}\n`);
+    output = renderJson(missingChecks, requiredMissing.length === 0);
   } else if (requiredMissing.length > 0) {
-    process.stdout.write(renderHuman(requiredMissing));
+    output = renderHuman(requiredMissing);
   } else {
     const advisories = missingChecks.filter((c) => !c.required);
     if (advisories.length > 0) {
-      process.stdout.write(
-        `✓ Required system dependencies present.\n` +
-          `  Advisory: ${advisories.map((c) => c.label).join("; ")}.\n`,
-      );
+      output =
+        "✓ Required system dependencies present.\n" +
+        `  Advisory: ${advisories.map((c) => c.label).join("; ")}.`;
     } else {
-      process.stdout.write("✓ All Harmonia system dependencies are present.\n");
+      output = "✓ All Harmonia system dependencies are present.";
     }
   }
+
+  return { output, exitCode };
 }
 
-main();
+function main() {
+  const { output, exitCode } = runCheck({ json: process.argv.includes("--json") });
+  process.stdout.write(`${output}\n`);
+  process.exitCode = exitCode;
+}
+
+// Run only when executed directly (not when imported by tests). Both sides are
+// realpath'd so relative invocations and symlinks resolve to the same file.
+const isMain =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main();
+}
