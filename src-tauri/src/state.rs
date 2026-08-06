@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -18,4 +19,10 @@ pub struct AppState {
     pub snapshot: Arc<Mutex<crate::engine::PlaybackSnapshot>>,
     /// Keeps the filesystem watcher alive; replaced when folders change.
     pub watcher: Mutex<Option<LibraryWatcher>>,
+    /// Whether the system tray was successfully created. Closing the window
+    /// only hides to the tray when this is true — otherwise the close button
+    /// must always quit, so a missing tray can never trap the user.
+    pub tray_active: Arc<AtomicBool>,
+    /// Coalesces debounced window-geometry persistence into a single writer.
+    pub window_save_pending: Arc<AtomicBool>,
 }

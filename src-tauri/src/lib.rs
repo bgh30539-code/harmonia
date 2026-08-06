@@ -1,4 +1,4 @@
-//! Harmonia — a modern, fast, beautiful music player for Linux.
+//! Harmonia — a modern, fast, beautiful music player for Linux and Windows.
 //!
 //! The application is split into a pure-Rust core crate (`harmonia-core`:
 //! database, metadata, scanning, playlists, DSP) and this Tauri crate, which
@@ -13,10 +13,11 @@ mod state;
 mod tray;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use harmonia_core::{watcher::LibraryWatcher, Database, Settings};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_global_shortcut::{
     Code, GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState,
 };
@@ -24,32 +25,26 @@ use tauri_plugin_global_shortcut::{
 use crate::engine::{spawn_engine, AudioCommand};
 use crate::state::AppState;
 
-fn load_settings(db: &Database) -> Settings {
-    db.get_setting("settings")
-        .ok()
-        .flatten()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
-fn persist_settings(db: &Database, settings: &Settings) {
-    if let Ok(json) = serde_json::to_string(settings) {
-        let _ = db.set_setting("settings", &json);
-    }
+/// Locks the shared settings mutex, surviving a poisoned lock (a thread that
+/// panicked while holding it). The alternative — panicking from inside the
+/// window close handler — is exactly the kind of "close button stops
+/// responding" bug we want to rule out.
+fn lock_settings(settings: &Mutex<Settings>) -> std::sync::MutexGuard<'_, Settings> {
+    settings.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// (Re)builds the filesystem watcher from the configured library folders.
+/// Folders that no longer exist are skipped so a removed/mounted-elsewhere
+/// path can never take the watcher down.
 pub(crate) fn refresh_watcher(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let folders: Vec<PathBuf> = state
-        .settings
-        .lock()
-        .unwrap()
+    let folders: Vec<PathBuf> = lock_settings(&state.settings)
         .library_folders
         .iter()
         .map(PathBuf::from)
+        .filter(|p| p.is_dir())
         .collect();
-    let mut guard = state.watcher.lock().unwrap();
+    let mut guard = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     *guard = None;
     if folders.is_empty() {
         return;
@@ -110,21 +105,141 @@ fn default_music_folder(app: &tauri::App) -> Option<PathBuf> {
     candidate.is_dir().then_some(candidate)
 }
 
+// ---------------------------------------------------------------------------
+// Window geometry persistence
+// ---------------------------------------------------------------------------
+
+/// Sanity range for restored window dimensions (physical pixels). Guards
+/// against corrupted settings pushing the window off-screen or to size 0.
+const MIN_WIN_W: f64 = 640.0;
+const MIN_WIN_H: f64 = 480.0;
+const MAX_WIN: f64 = 16_384.0;
+
+/// Records the current outer size/position into the in-memory settings.
+/// Skipped while the mini player is active so its tiny geometry never
+/// overwrites the remembered full window. When `persist` is true the blob is
+/// written to the database immediately (called on close/destroy).
+fn update_window_geometry(window: &tauri::Window, state: &AppState, persist: bool) {
+    if lock_settings(&state.settings).mini_player {
+        return;
+    }
+    let size = window.outer_size().ok();
+    let position = window.outer_position().ok();
+    let maximized = window.is_maximized().unwrap_or(false);
+    {
+        let mut s = lock_settings(&state.settings);
+        if let Some(sz) = size {
+            if sz.width >= 200 && sz.height >= 200 {
+                s.window_width = sz.width as f64;
+                s.window_height = sz.height as f64;
+            }
+        }
+        if let Some(p) = position {
+            s.window_x = Some(p.x as f64);
+            s.window_y = Some(p.y as f64);
+        }
+        s.window_maximized = maximized;
+    }
+    if persist {
+        let s = lock_settings(&state.settings).clone();
+        let _ = state.db.save_settings(&s);
+    }
+}
+
+/// Debounced persistence for window moves/resizes: while the user drags or
+/// resizes, only the in-memory settings are updated (cheap); one background
+/// write happens ~600 ms after the last event.
+fn debounce_window_persist(state: &AppState) {
+    if state.window_save_pending.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let settings = state.settings.clone();
+    let db = state.db.clone();
+    let pending = state.window_save_pending.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let s = lock_settings(&settings).clone();
+        let _ = db.save_settings(&s);
+        pending.store(false, Ordering::Relaxed);
+    });
+}
+
+/// Restores the saved window geometry on startup. Position values are only
+/// applied when they look sane (a disconnected monitor can leave stale
+/// coordinates behind, in which case the OS centers the window instead).
+fn apply_window_geometry(app: &tauri::App, state: &AppState) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let s = lock_settings(&state.settings);
+    let w = s.window_width.clamp(MIN_WIN_W, MAX_WIN) as u32;
+    let h = s.window_height.clamp(MIN_WIN_H, MAX_WIN) as u32;
+    let (x, y, maximized) = (s.window_x, s.window_y, s.window_maximized);
+    drop(s);
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(w, h)));
+    if let (Some(x), Some(y)) = (x, y) {
+        if (-10_000.0..=50_000.0).contains(&x) && (-10_000.0..=50_000.0).contains(&y) {
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+                x as i32, y as i32,
+            )));
+        }
+    }
+    if maximized {
+        let _ = window.maximize();
+    }
+}
+
+/// Final flush on application exit: persist the resume position (so "last
+/// played song" survives an actual quit, not just a hide-to-tray) plus the
+/// current settings blob. Best-effort — shutdown must never be blocked by a
+/// failing write.
+fn flush_on_exit(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    {
+        let snap = state.snapshot.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(track) = &snap.current {
+            let _ = state
+                .db
+                .set_setting("resume.track_id", &track.id.to_string());
+            let _ = state
+                .db
+                .set_setting("resume.position_ms", &snap.position_ms.to_string());
+        }
+    }
+    let s = lock_settings(&state.settings).clone();
+    let _ = state.db.save_settings(&s);
+    log::info!("Harmonia shutting down cleanly");
+}
+
 pub fn run() {
     env_logger::init();
 
-    tauri::Builder::default()
+    // The Windows build has no console (windows_subsystem = "windows"), so a
+    // panic would otherwise vanish. Route panics into the log file instead of
+    // dying silently — and make sure a panicked thread never takes the whole
+    // process down unexpectedly.
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("panic: {info}");
+        eprintln!("Harmonia panicked: {info}");
+    }));
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             on_second_instance(app, argv);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let paths = crate::paths::AppPaths::resolve(app)?;
 
             let db = Arc::new(Database::open(&paths.db_path)?);
-            let mut settings = load_settings(&db);
+            // `load_settings` re-seeds library folders from the folders table
+            // if the stored blob is missing or corrupted.
+            let mut settings = db.load_settings()?;
 
-            // Seed the folders table and add a sensible default root.
+            // Keep the folders table in sync with the settings blob.
             for folder in &settings.library_folders {
                 let _ = db.add_folder(folder);
             }
@@ -133,9 +248,12 @@ pub fn run() {
                     let music = music.to_string_lossy().into_owned();
                     let _ = db.add_folder(&music);
                     settings.library_folders.push(music);
-                    persist_settings(&db, &settings);
                 }
             }
+
+            // Mini-player is a transient window mode, not a persistent one:
+            // always start in the normal window.
+            settings.mini_player = false;
 
             let settings = Arc::new(Mutex::new(settings));
             let engine = spawn_engine(app.handle().clone(), db.clone(), settings.clone());
@@ -146,21 +264,28 @@ pub fn run() {
                 engine_tx: engine.tx,
                 snapshot: engine.snapshot,
                 watcher: Mutex::new(None),
+                tray_active: Arc::new(AtomicBool::new(false)),
+                window_save_pending: Arc::new(AtomicBool::new(false)),
             };
             app.manage(state);
 
+            let st = app.state::<AppState>();
+            apply_window_geometry(app, &st);
+
             refresh_watcher(app.handle());
             register_global_shortcuts(app.handle());
-            crate::tray::build_tray(app)?;
+            match crate::tray::build_tray(app) {
+                Ok(()) => st.tray_active.store(true, Ordering::Relaxed),
+                Err(e) => log::warn!("system tray unavailable, closing the window will quit: {e}"),
+            }
 
-            let st = app.state::<AppState>();
             // First run: scan the library in the background.
             let empty = st.db.count_tracks().unwrap_or(0) == 0;
-            if empty && !st.settings.lock().unwrap().library_folders.is_empty() {
+            if empty && !lock_settings(&st.settings).library_folders.is_empty() {
                 let _ = commands::trigger_scan(app.handle().clone(), false);
             }
-            // Resume the previous session.
-            let resume = st.settings.lock().unwrap().resume_last_session;
+            // Resume the previous session (last played song + position).
+            let resume = lock_settings(&st.settings).resume_last_session;
             if resume {
                 let info = st
                     .db
@@ -249,17 +374,51 @@ pub fn run() {
             commands::get_audio_devices,
             commands::set_mini_player,
             commands::import_paths,
+            commands::quit_app,
+            commands::notify_now,
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<AppState>();
-                let hide_to_tray = !state.settings.lock().unwrap().mini_player;
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                // The close button must ALWAYS work: if the user opted into
+                // close-to-tray (and the tray actually exists) the window
+                // hides and playback continues; otherwise the window closes
+                // and, being the only window, the app exits.
+                let Some(state) = window.try_state::<AppState>() else {
+                    return;
+                };
+                let settings = lock_settings(&state.settings);
+                let hide_to_tray = settings.close_to_tray
+                    && !settings.mini_player
+                    && state.tray_active.load(Ordering::Relaxed);
+                drop(settings);
                 if hide_to_tray {
                     api.prevent_close();
                     let _ = window.hide();
+                    // Remember the geometry before hiding.
+                    update_window_geometry(window, &state, true);
+                } else {
+                    update_window_geometry(window, &state, true);
                 }
             }
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                if let Some(state) = window.try_state::<AppState>() {
+                    update_window_geometry(window, &state, false);
+                    debounce_window_persist(&state);
+                }
+            }
+            tauri::WindowEvent::Destroyed => {
+                if let Some(state) = window.try_state::<AppState>() {
+                    update_window_geometry(window, &state, true);
+                }
+            }
+            _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Harmonia");
+        .build(tauri::generate_context!())
+        .expect("error while building Harmonia");
+
+    app.run(|app_handle, event| {
+        if let RunEvent::ExitRequested { .. } = event {
+            flush_on_exit(app_handle);
+        }
+    });
 }

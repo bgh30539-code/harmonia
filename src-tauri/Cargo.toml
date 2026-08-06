@@ -19,6 +19,7 @@ harmonia-core = { path = "../harmonia-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
 rodio = { version = "0.22", features = ["default", "symphonia-all"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

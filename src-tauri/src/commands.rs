@@ -23,11 +23,12 @@ use crate::state::AppState;
 type CmdResult<T> = Result<T, String>;
 
 pub fn persist_settings(state: &AppState) {
-    let settings = state.settings.lock().unwrap().clone();
-    let _ = state.db.set_setting(
-        "settings",
-        &serde_json::to_string(&settings).unwrap_or_default(),
-    );
+    let settings = state
+        .settings
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let _ = state.db.save_settings(&settings);
 }
 
 pub fn refresh_watcher(app: &AppHandle) {
@@ -760,6 +761,8 @@ pub fn update_settings(
     settings.crossfade_seconds = settings.crossfade_seconds.clamp(0.0, 15.0);
     settings.bass_boost_db = settings.bass_boost_db.clamp(-12.0, 12.0);
     settings.balance = settings.balance.clamp(-1.0, 1.0);
+    settings.window_width = settings.window_width.clamp(200.0, 16_384.0);
+    settings.window_height = settings.window_height.clamp(200.0, 16_384.0);
     if !Settings::accent_ok(&settings.accent) {
         settings.accent = "#7c5cff".to_string();
     }
@@ -773,9 +776,22 @@ pub fn update_settings(
         }
     }
 
-    let old_folders = state.settings.lock().unwrap().library_folders.clone();
+    // Never let a stale or empty folder list silently wipe the configured
+    // library roots (the folders table is the source of truth).
+    if settings.library_folders.is_empty() {
+        if let Ok(folders) = state.db.list_folders() {
+            settings.library_folders = folders.into_iter().map(|f| f.path).collect();
+        }
+    }
+
+    let old_folders = state
+        .settings
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .library_folders
+        .clone();
     {
-        let mut guard = state.settings.lock().unwrap();
+        let mut guard = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         *guard = settings.clone();
     }
     persist_settings(&state);
@@ -821,6 +837,16 @@ pub fn get_audio_devices() -> CmdResult<Vec<String>> {
 
 #[tauri::command]
 pub fn set_mini_player(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    // Flip the mode flag BEFORE resizing: window resize events are dispatched
+    // asynchronously, and the geometry-save handler skips while the mini flag
+    // is set — so the 420x150 mini size can never overwrite the remembered
+    // full-window size.
+    state
+        .settings
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .mini_player = enabled;
+    persist_settings(&state);
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
@@ -830,15 +856,42 @@ pub fn set_mini_player(app: AppHandle, state: State<'_, AppState>, enabled: bool
             .map_err(|e| e.to_string())?;
         window.set_always_on_top(true).map_err(|e| e.to_string())?;
     } else {
+        // Restore the remembered full-window geometry rather than a hardcoded
+        // size, so leaving mini-player returns the user to their layout.
+        let s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+        let (w, h) = (
+            s.window_width.clamp(640.0, 16_384.0),
+            s.window_height.clamp(480.0, 16_384.0),
+        );
+        drop(s);
         window
-            .set_size(tauri::Size::Logical(tauri::LogicalSize::new(1280.0, 820.0)))
+            .set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)))
             .map_err(|e| e.to_string())?;
         window.set_always_on_top(false).map_err(|e| e.to_string())?;
     }
-    state.settings.lock().unwrap().mini_player = enabled;
-    persist_settings(&state);
     let _ = app.emit("ui://mini", enabled);
     Ok(())
+}
+
+/// Fully quits the application, bypassing close-to-tray. Called from the
+/// frontend (e.g. "Exit" actions); the tray Quit item triggers the same path
+/// via the native exit request.
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+/// Best-effort desktop notification. Failures (unsupported platform,
+/// permission denied) are logged, never surfaced as errors to the caller.
+#[tauri::command]
+pub fn notify_now(app: AppHandle, title: String, body: String) -> CmdResult<()> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]

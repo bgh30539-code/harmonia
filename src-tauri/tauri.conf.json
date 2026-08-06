@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Harmonia",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "dev.harmonia.player",
   "build": {
     "beforeDevCommand": "npm run check:system && npm run dev",
@@ -38,12 +38,53 @@
       "icons/icon.png"
     ],
     "category": "Music",
-    "shortDescription": "A modern music player for Linux",
-    "longDescription": "Harmonia is a fast, beautiful, keyboard-friendly music player for Linux. It scans your library, plays MP3, FLAC, OGG, AAC, WAV and M4A files with gapless playback and ReplayGain, and integrates with the desktop via tray icon, media keys and notifications.",
+    "shortDescription": "A modern music player for Linux and Windows",
+    "longDescription": "Harmonia is a fast, beautiful, keyboard-friendly music player for Linux and Windows. It scans your library, plays MP3, FLAC, OGG, AAC, WAV and M4A files with gapless playback and ReplayGain, and integrates with the desktop via tray icon, media keys and notifications.",
     "linux": {
       "deb": {
         "depends": ["libasound2"],
         "files": {}
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["mp3"],
+        "mimeType": "audio/mpeg",
+        "name": "MP3 Audio",
+        "description": "MP3 audio file"
+      },
+      {
+        "ext": ["flac"],
+        "mimeType": "audio/flac",
+        "name": "FLAC Audio",
+        "description": "FLAC lossless audio file"
+      },
+      {
+        "ext": ["ogg", "opus"],
+        "mimeType": "audio/ogg",
+        "name": "Ogg Audio",
+        "description": "Ogg Vorbis/Opus audio file"
+      },
+      {
+        "ext": ["wav"],
+        "mimeType": "audio/wav",
+        "name": "WAV Audio",
+        "description": "Wave audio file"
+      },
+      {
+        "ext": ["m4a", "aac", "mp4"],
+        "mimeType": "audio/mp4",
+        "name": "MPEG-4 Audio",
+        "description": "MPEG-4 audio file"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Harmonia",
+        "displayLanguageSelector": false,
+        "languages": ["English"],
+        "installerHooks": "./installer-hooks.nsh"
       }
     }
   }
