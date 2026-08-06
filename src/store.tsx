@@ -68,19 +68,46 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 let toastId = 0;
 
+/// Top-level views we restore on the next launch ("remember last opened
+/// section"). Contextual views (album/artist/playlist/search) are skipped.
+const RESTORABLE_VIEWS = [
+  "library",
+  "albums",
+  "artists",
+  "playlists",
+  "favorites",
+  "recent",
+  "mostPlayed",
+] as const;
+const LAST_VIEW_KEY = "harmonia.last-view";
+
+function initialView(): View {
+  try {
+    const saved = localStorage.getItem(LAST_VIEW_KEY);
+    if (saved && (RESTORABLE_VIEWS as readonly string[]).includes(saved)) {
+      return { name: saved } as View;
+    }
+  } catch {
+    // localStorage unavailable (private mode etc.) — fall through.
+  }
+  return { name: "library" };
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [playback, setPlayback] = useState<PlaybackSnapshot | null>(null);
   const [positionMs, setPositionMs] = useState(0);
-  const [view, setView] = useState<View>({ name: "library" });
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [queueOpen, setQueueOpen] = useState(false);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [mini, setMini] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [view, setView] = useState<View>(initialView);
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Tracks the last notified track id so each new song pings the desktop once.
+  const notifiedIdRef = useRef<number | null>(null);
 
   const pushToast = useCallback((message: string, kind: Toast["kind"] = "info") => {
     const id = ++toastId;
@@ -98,6 +125,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setView(next);
     setQueueOpen(false);
     setNowPlayingOpen(false);
+    // Remember the last opened top-level section across restarts.
+    if ((RESTORABLE_VIEWS as readonly string[]).includes(next.name)) {
+      try {
+        localStorage.setItem(LAST_VIEW_KEY, next.name);
+      } catch {
+        // ignore
+      }
+    }
   }, []);
 
   const openContextMenu = useCallback((x: number, y: number, items: MenuAction[]) => {
@@ -124,6 +159,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       api.onEvent("player://state", (snap) => {
         setPlayback(snap);
         setPositionMs(snap.positionMs);
+        // Desktop notification on track change (opt-in via settings). The
+        // first snapshot of a session never notifies — only real changes.
+        const track = snap.current;
+        if (
+          track &&
+          snap.playing &&
+          notifiedIdRef.current !== null &&
+          notifiedIdRef.current !== track.id &&
+          settingsRef.current?.notifyOnTrackChange
+        ) {
+          void api
+            .notify(track.title || "Unknown", `${track.artist || "Unknown"} — ${track.album || "Unknown"}`)
+            .catch(() => undefined);
+        }
+        if (track) notifiedIdRef.current = track.id;
       }),
       api.onEvent("player://position", (p) => setPositionMs(p.positionMs)),
       api.onEvent("scan://done", (stats) => {

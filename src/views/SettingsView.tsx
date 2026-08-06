@@ -156,6 +156,22 @@ export function SettingsView() {
             />
             <span>{t("settings.resume")}</span>
           </label>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.closeToTray}
+              onChange={(e) => patch({ closeToTray: e.target.checked })}
+            />
+            <span>{t("settings.closeToTray")}</span>
+          </label>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.notifyOnTrackChange}
+              onChange={(e) => patch({ notifyOnTrackChange: e.target.checked })}
+            />
+            <span>{t("settings.notifications")}</span>
+          </label>
         </div>
       </section>
 
@@ -303,7 +319,7 @@ export function SettingsView() {
         <div className="about-row">
           <Music2 size={20} />
           <span>
-            {t("app.name")} — {t("settings.version", { version: "0.1.0" })}
+            {t("app.name")} — {t("settings.version", { version: "0.1.1" })}
           </span>
         </div>
       </section>

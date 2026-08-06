@@ -107,6 +107,8 @@
   "settings.mono": "Mezcla mono",
   "settings.library": "Biblioteca",
   "settings.resume": "Reanudar la última sesión al iniciar",
+  "settings.closeToTray": "Ocultar en la bandeja del sistema al cerrar la ventana",
+  "settings.notifications": "Mostrar una notificación de escritorio al cambiar de canción",
   "settings.cacheSize": "Tamaño de caché de carátulas (MiB)",
   "settings.saved": "Ajustes guardados",
   "settings.about": "Acerca de",

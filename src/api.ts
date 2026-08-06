@@ -137,6 +137,9 @@ export const getAudioDevices = () => invoke<string[]>("get_audio_devices");
 export const setMiniPlayer = (enabled: boolean) =>
   invoke<void>("set_mini_player", { enabled });
 export const importPaths = (paths: string[]) => invoke<ImportResult>("import_paths", { paths });
+export const quitApp = () => invoke<void>("quit_app");
+export const notify = (title: string, body: string) =>
+  invoke<void>("notify_now", { title, body });
 
 // ---------------------------------------------------------------------------
 // Events

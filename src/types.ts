@@ -139,6 +139,13 @@ export interface Settings {
   mono: boolean;
   cacheSizeMb: number;
   miniPlayer: boolean;
+  closeToTray: boolean;
+  windowWidth: number;
+  windowHeight: number;
+  windowX: number | null;
+  windowY: number | null;
+  windowMaximized: boolean;
+  notifyOnTrackChange: boolean;
 }
 
 export interface SleepTimerUi {

@@ -107,6 +107,8 @@
   "settings.mono": "Mono downmix",
   "settings.library": "Library",
   "settings.resume": "Resume last session on startup",
+  "settings.closeToTray": "Hide to system tray when closing the window",
+  "settings.notifications": "Show a desktop notification when the track changes",
   "settings.cacheSize": "Artwork cache size (MiB)",
   "settings.saved": "Settings saved",
   "settings.about": "About",
