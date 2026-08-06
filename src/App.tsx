@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { AppProvider, useApp, useGlobalShortcuts } from "./store";
 import { Sidebar } from "./components/Sidebar";
@@ -10,12 +10,15 @@ import { ContextMenu } from "./components/ContextMenu";
 import { Toasts } from "./components/Toasts";
 import { ResumeBanner } from "./components/ResumeBanner";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { BottomNav } from "./components/BottomNav";
 import { ViewRouter } from "./components/ViewRouter";
 import * as api from "./api";
 
 function Shell() {
   useGlobalShortcuts();
   const { mini } = useApp();
+  // On phones the sidebar slides in as a drawer; this toggles it.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Drag & drop of audio files onto the window imports them into the library.
   useEffect(() => {
@@ -39,14 +42,16 @@ function Shell() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-column">
-        <TopBar />
+        <TopBar onMenu={() => setSidebarOpen(true)} />
         <main className="scroll-area">
           <ViewRouter />
         </main>
         <PlayerBar />
+        <BottomNav />
       </div>
+      {sidebarOpen && <div className="nav-scrim" onClick={() => setSidebarOpen(false)} />}
       <QueueDrawer />
       <NowPlayingDrawer />
       <ContextMenu />

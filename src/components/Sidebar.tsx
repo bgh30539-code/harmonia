@@ -21,7 +21,7 @@ interface NavItem {
   view: View;
 }
 
-export function Sidebar() {
+export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { t, view, navigate, libraryVersion } = useApp();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
@@ -43,8 +43,14 @@ export function Sidebar() {
   const isActive = (v: View) => v.name === view.name;
 
   return (
-    <aside className="sidebar">
-      <div className="brand" onClick={() => navigate({ name: "library" })}>
+    <aside className={`sidebar ${open ? "open" : ""}`}>
+      <div
+        className="brand"
+        onClick={() => {
+          navigate({ name: "library" });
+          onClose?.();
+        }}
+      >
         <span className="brand-mark">
           <AudioLines size={20} />
         </span>
@@ -56,7 +62,10 @@ export function Sidebar() {
           <button
             key={item.key}
             className={`nav-item ${isActive(item.view) ? "active" : ""}`}
-            onClick={() => navigate(item.view)}
+            onClick={() => {
+              navigate(item.view);
+              onClose?.();
+            }}
           >
             {item.icon}
             <span>{item.label}</span>
@@ -70,7 +79,10 @@ export function Sidebar() {
               <button
                 key={p.id}
                 className={`nav-item ${view.name === "playlist" && view.id === p.id ? "active" : ""}`}
-                onClick={() => navigate({ name: "playlist", id: p.id, title: p.name })}
+                onClick={() => {
+                  navigate({ name: "playlist", id: p.id, title: p.name });
+                  onClose?.();
+                }}
               >
                 <ListMusic size={18} />
                 <span className="nav-label-ellipsis">{p.name}</span>
@@ -83,7 +95,10 @@ export function Sidebar() {
       <div className="sidebar-footer">
         <button
           className={`nav-item ${view.name === "settings" ? "active" : ""}`}
-          onClick={() => navigate({ name: "settings" })}
+          onClick={() => {
+            navigate({ name: "settings" });
+            onClose?.();
+          }}
         >
           <Settings size={18} />
           <span>{t("nav.settings")}</span>

@@ -242,7 +242,7 @@ export function PlayerBar() {
           <ListMusic size={18} />
         </button>
         <button
-          className="icon-btn"
+          className="icon-btn pb-mini-btn"
           title={t("player.miniPlayer")}
           onClick={() => {
             api.setMiniPlayer(true).catch((e) => pushToast(String(e), "error"));

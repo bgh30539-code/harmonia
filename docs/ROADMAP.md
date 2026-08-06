@@ -3,7 +3,7 @@
 Priorities are guided by the principles in the [README](../README.md):
 performance first, no mock features, maintainability for the next ten years.
 
-## v0.1 — current (v0.1.1 released: Windows support + bug fixes)
+## v0.1 — current (v0.1.2 released: Android support + responsive UI)
 
 - [x] Library: recursive scanning, incremental rescans, folder watching
 - [x] SQLite index (tracks, albums, artists, playlists)
@@ -18,6 +18,11 @@ performance first, no mock features, maintainability for the next ten years.
 - [x] Windows support (v0.1.1): NSIS installer, WebView2 runtime, portable
   `harmonia.exe`, Start Menu/desktop shortcuts, file associations
 - [x] CI pipeline with tests, lint, and bundle artifacts (Linux + Windows)
+- [x] Android support (v0.1.2): same-codebase build, responsive bottom-nav
+  UI, APK + AAB in CI, media/notification permissions
+- [ ] Android background playback (media session, notification/lock-screen
+  controls, audio focus) — scheduled for v0.1.3
+- [ ] Android media-store auto-discovery — scheduled for v0.1.3
 
 ## v0.2 — audio & metadata depth
 

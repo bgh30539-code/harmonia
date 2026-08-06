@@ -27,5 +27,10 @@ log = "0.4"
 env_logger = "0.11"
 base64 = "0.22"
 rand = "0.8"
-rfd = "0.17"
 thiserror = "2"
+
+# Native file/folder dialogs are a desktop feature: rfd has no Android
+# backend, so it must not be compiled into the mobile build (the folder-
+# picking commands return a clear error there instead).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = "0.17"

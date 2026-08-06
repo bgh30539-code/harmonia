@@ -128,7 +128,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          name: "Harmonia ${{ github.ref_name }} - Microslop Update + Bug Fixes"
+          name: "Harmonia ${{ github.ref_name }} — Reject Apple Update"
           body_path: release-notes.md
           # Cargo workspace root is the repo root, so bundles land in
           # target/ (not src-tauri/target/).
@@ -140,12 +140,76 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  windows:
-    name: Build Windows bundles (NSIS installer + portable exe)
-    runs-on: windows-latest
+  android:
+    name: Build Android APK + AAB
+    runs-on: ubuntu-latest
     # Runs after the Linux job so the draft release exists before its assets
     # are appended (softprops updates the existing release for this tag).
     needs: [verify, release]
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Android Rust targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # ubuntu-latest ships the Android SDK; make sure the NDK version the
+      # Tauri toolchain expects is present.
+      - name: Ensure Android NDK
+        run: |
+          if [ ! -d "$ANDROID_HOME/ndk/26.1.10909125" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;26.1.10909125"
+          fi
+
+      - name: Verify tag matches package version
+        run: |
+          CONF_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$CONF_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag 'v${TAG_VERSION}' does not match version '${CONF_VERSION}' in src-tauri/tauri.conf.json. Bump the version before tagging."
+            exit 1
+          fi
+
+      - name: Build Android APK + AAB
+        env:
+          # Skips the Linux desktop system-dependency preflight — mobile
+          # builds need none of WebKitGTK/ALSA (the NDK supplies the
+          # toolchain). The frontend still builds normally.
+          HARMONIA_BUILD_ANDROID: "1"
+        # aarch64 (real devices) + x86_64 (emulators); building all four ABIs
+        # with LTO would blow past the job timeout on a cold cache.
+        run: npm run tauri -- android build --apk --aab --target aarch64 x86_64
+
+      # Append the APK/AAB to the draft release created by the Linux job.
+      - name: Upload Android artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/gen/android/app/build/outputs/**/*.apk
+            src-tauri/gen/android/app/build/outputs/**/*.aab
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    name: Build Windows bundles (NSIS installer + portable exe)
+    runs-on: windows-latest
+    # Runs after the Linux and Android jobs so the draft release exists with
+    # the full artifact set before it is published (softprops updates the
+    # existing release for this tag).
+    needs: [verify, release, android]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

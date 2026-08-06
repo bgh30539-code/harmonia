@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+key.properties
+keystore.properties
+
+# Harmonia ships its FOSS release signing key and keystore.properties in-repo
+# (see docs/INSTALL.md) so local builds and CI both produce signed,
+# update-consistent artifacts. Rotate before any store submission.
+!keystore.properties
+
+/.tauri
+/tauri.settings.gradle

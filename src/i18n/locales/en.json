@@ -1,5 +1,6 @@
 {
   "app.name": "Harmonia",
+  "nav.menu": "Menu",
   "nav.library": "Library",
   "nav.albums": "Albums",
   "nav.artists": "Artists",

@@ -10,14 +10,18 @@ mod dsp_source;
 mod engine;
 mod paths;
 mod state;
+#[cfg(not(target_os = "android"))]
 mod tray;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+#[cfg(not(target_os = "android"))]
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use harmonia_core::{watcher::LibraryWatcher, Database, Settings};
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
+#[cfg(not(target_os = "android"))]
 use tauri_plugin_global_shortcut::{
     Code, GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState,
 };
@@ -64,6 +68,7 @@ pub(crate) fn refresh_watcher(app: &AppHandle) {
 }
 
 /// Shared handler for the global media-key shortcuts.
+#[cfg(not(target_os = "android"))]
 fn on_media_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if event.state != ShortcutState::Pressed {
         return;
@@ -81,6 +86,7 @@ fn on_media_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent)
 
 /// Registers the global media keys. Failures are logged rather than aborting
 /// startup — media keys can be unavailable on headless/remote setups.
+#[cfg(not(target_os = "android"))]
 fn register_global_shortcuts(app: &AppHandle) {
     for key in ["MediaPlayPause", "MediaTrackNext", "MediaTrackPrevious"] {
         if let Err(e) = app.global_shortcut().on_shortcut(key, on_media_shortcut) {
@@ -91,6 +97,7 @@ fn register_global_shortcuts(app: &AppHandle) {
 
 /// Second instance launched (e.g. files opened with Harmonia): focus the
 /// existing window and import any audio files passed on the command line.
+#[cfg(not(target_os = "android"))]
 fn on_second_instance(app: &AppHandle, argv: Vec<String>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -119,6 +126,7 @@ const MAX_WIN: f64 = 16_384.0;
 /// Skipped while the mini player is active so its tiny geometry never
 /// overwrites the remembered full window. When `persist` is true the blob is
 /// written to the database immediately (called on close/destroy).
+#[cfg(not(target_os = "android"))]
 fn update_window_geometry(window: &tauri::Window, state: &AppState, persist: bool) {
     if lock_settings(&state.settings).mini_player {
         return;
@@ -149,6 +157,7 @@ fn update_window_geometry(window: &tauri::Window, state: &AppState, persist: boo
 /// Debounced persistence for window moves/resizes: while the user drags or
 /// resizes, only the in-memory settings are updated (cheap); one background
 /// write happens ~600 ms after the last event.
+#[cfg(not(target_os = "android"))]
 fn debounce_window_persist(state: &AppState) {
     if state.window_save_pending.swap(true, Ordering::Relaxed) {
         return;
@@ -167,6 +176,7 @@ fn debounce_window_persist(state: &AppState) {
 /// Restores the saved window geometry on startup. Position values are only
 /// applied when they look sane (a disconnected monitor can leave stale
 /// coordinates behind, in which case the OS centers the window instead).
+#[cfg(not(target_os = "android"))]
 fn apply_window_geometry(app: &tauri::App, state: &AppState) {
     let Some(window) = app.get_webview_window("main") else {
         return;
@@ -213,6 +223,9 @@ fn flush_on_exit(app: &AppHandle) {
     log::info!("Harmonia shutting down cleanly");
 }
 
+/// The mobile entry point macro (active only when building for Android/iOS)
+/// exports the JNI symbols the runtime needs to boot the Rust core.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
@@ -225,12 +238,22 @@ pub fn run() {
         eprintln!("Harmonia panicked: {info}");
     }));
 
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            on_second_instance(app, argv);
-        }))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
+    #[cfg_attr(target_os = "android", allow(unused_mut))]
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
+
+    // Desktop-only integrations. The single-instance guard and global media
+    // keys have no Android counterpart (their plugins are not built for
+    // mobile targets), so they are compiled in only on desktop.
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+                on_second_instance(app, argv);
+            }))
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    }
+
+    let app = builder
         .setup(|app| {
             let paths = crate::paths::AppPaths::resolve(app)?;
 
@@ -248,6 +271,24 @@ pub fn run() {
                     let music = music.to_string_lossy().into_owned();
                     let _ = db.add_folder(&music);
                     settings.library_folders.push(music);
+                }
+            }
+
+            // On Android there is no desktop file dialog, so the standard
+            // shared music folders are discovered automatically instead. With
+            // the media permission granted (requested by MainActivity), media
+            // files under these paths are readable directly; anything missing
+            // or unreadable is simply skipped by the scanner.
+            #[cfg(target_os = "android")]
+            {
+                for dir in ["/storage/emulated/0/Music", "/storage/emulated/0/Download"] {
+                    if std::path::Path::new(dir).is_dir() {
+                        let d = dir.to_string();
+                        let _ = db.add_folder(&d);
+                        if !settings.library_folders.contains(&d) {
+                            settings.library_folders.push(d);
+                        }
+                    }
                 }
             }
 
@@ -270,14 +311,22 @@ pub fn run() {
             app.manage(state);
 
             let st = app.state::<AppState>();
-            apply_window_geometry(app, &st);
+
+            // Window geometry, media keys and the tray are desktop concerns;
+            // Android runs the same frontend without any of them.
+            #[cfg(not(target_os = "android"))]
+            {
+                apply_window_geometry(app, &st);
+                register_global_shortcuts(app.handle());
+                match crate::tray::build_tray(app) {
+                    Ok(()) => st.tray_active.store(true, Ordering::Relaxed),
+                    Err(e) => {
+                        log::warn!("system tray unavailable, closing the window will quit: {e}")
+                    }
+                }
+            }
 
             refresh_watcher(app.handle());
-            register_global_shortcuts(app.handle());
-            match crate::tray::build_tray(app) {
-                Ok(()) => st.tray_active.store(true, Ordering::Relaxed),
-                Err(e) => log::warn!("system tray unavailable, closing the window will quit: {e}"),
-            }
 
             // First run: scan the library in the background.
             let empty = st.db.count_tracks().unwrap_or(0) == 0;
@@ -376,8 +425,12 @@ pub fn run() {
             commands::import_paths,
             commands::quit_app,
             commands::notify_now,
-        ])
-        .on_window_event(|window, event| match event {
+        ]);
+
+    // Window lifecycle (geometry memory, close-to-tray) is desktop-only:
+    // Android has no windows, so this handler is compiled in only on desktop.
+    #[cfg(not(target_os = "android"))]
+    let app = app.on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 // The close button must ALWAYS work: if the user opted into
                 // close-to-tray (and the tray actually exists) the window
@@ -412,7 +465,9 @@ pub fn run() {
                 }
             }
             _ => {}
-        })
+    });
+
+    let app = app
         .build(tauri::generate_context!())
         .expect("error while building Harmonia");
 

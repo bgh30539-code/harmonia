@@ -76,9 +76,30 @@ npm run tauri build
 - **End-to-end** packaging is validated by the CI `package` job, which produces
   real AppImage and `.deb` artifacts on every push to `main`.
 
+## Android development
+
+Prerequisites: Android SDK + NDK (`ANDROID_HOME` set, NDK r26b+), JDK 17+.
+See [tauri.app/start/prerequisites/#android](https://tauri.app/start/prerequisites/#android)
+and the Android section of [INSTALL.md](INSTALL.md).
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+npm run tauri -- android dev       # run on a connected device/emulator
+HARMONIA_BUILD_ANDROID=1 npm run tauri -- android build --apk --aab
+```
+
+The Android project lives in `src-tauri/gen/android/` (regenerate with
+`npx tauri android init`). Desktop-only integrations (tray, global media
+keys, single-instance) are `#[cfg(not(target_os = "android"))]`-gated in
+`src-tauri/src/lib.rs` — keep them that way when adding platform features.
+The frontend is responsive: phones get a bottom navigation bar, the sidebar
+slides in as a drawer, and queue/now-playing go full-screen
+(`src/styles/global.css`, the `@media (max-width: 719px)` block).
+
 ## Release process
 
-1. Bump `version` in `src-tauri/tauri.conf.json` (and `package.json`).
+1. Bump `version` in `src-tauri/tauri.conf.json`, `package.json` **and** the
+   workspace `Cargo.toml`.
 2. Update `CHANGELOG.md` — add a `## [x.y.z]` section for the new version.
 3. Merge to `main` and push a matching tag:
 
@@ -88,10 +109,11 @@ npm run tauri build
    ```
 
 4. The `Release` workflow (`.github/workflows/release.yml`) verifies the
-   project, builds AppImage + `.deb` bundles, and attaches them to a **draft**
-   GitHub release. The tag must match the version in `tauri.conf.json` or the
-   workflow fails early.
-5. Review the draft release and hit **Publish** — no manual asset wrangling.
+   project, builds AppImage + `.deb`, Android APK + AAB and Windows NSIS
+   bundles, and attaches everything to a **draft** GitHub release. The tag
+   must match the version in `tauri.conf.json` or the workflow fails early.
+5. The Windows job publishes the draft once every artifact is uploaded — the
+   release only ever becomes visible with the complete artifact set.
 
 To test packaging without a release, push to `main` and download the bundles
 from the CI `package` job's artifacts.

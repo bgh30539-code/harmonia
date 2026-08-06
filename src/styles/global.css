@@ -18,6 +18,7 @@
   --sidebar-w: 232px;
   --topbar-h: 60px;
   --playerbar-h: 84px;
+  --bottomnav-h: 64px;
   --drawer-w: 340px;
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -2375,5 +2376,232 @@ input[type="range"] {
   .detail-avatar {
     width: 140px;
     height: 140px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Bottom navigation (phones)
+   -------------------------------------------------------------------------- */
+
+.bottom-nav {
+  display: none;
+  align-items: stretch;
+  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 20;
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px;
+  min-height: 44px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  transition: var(--transition);
+}
+
+.bottom-nav-item svg {
+  transition: var(--transition);
+}
+
+.bottom-nav-item:active {
+  transform: scale(0.92);
+}
+
+.bottom-nav-item.active {
+  color: var(--accent);
+}
+
+.bottom-nav-item.active svg {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+
+.topbar-menu {
+  display: none;
+}
+
+.nav-scrim {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Phone layout (< 720px): the sidebar becomes a drawer, the bottom nav
+   appears, drawers go full-screen and track tables simplify.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 719px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 84vw);
+    transform: translateX(-105%);
+    transition: transform 260ms var(--ease);
+    z-index: 85;
+    box-shadow: none;
+  }
+
+  .sidebar.open {
+    transform: none;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    z-index: 80;
+    animation: fade-in 160ms var(--ease);
+  }
+
+  .main-column {
+    /* The two-row phone player bar sizes itself (height: auto above), so let
+       the grid row follow it instead of clipping to the desktop height. */
+    grid-template-rows: var(--topbar-h) 1fr auto var(--bottomnav-h);
+  }
+
+  .bottom-nav {
+    display: flex;
+  }
+
+  .topbar {
+    padding: 0 10px;
+  }
+
+  .topbar-menu {
+    display: grid;
+    flex-shrink: 0;
+  }
+
+  .search-box {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .topbar-actions .btn span {
+    display: none;
+  }
+
+  .view {
+    padding: 16px 12px 28px;
+    min-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 128px);
+  }
+
+  .view-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .view-actions {
+    flex-wrap: wrap;
+  }
+
+  .stats-row {
+    flex-wrap: wrap;
+  }
+
+  /* Track table: keep artwork + title + favorite, hide the rest. */
+  .track-table-header {
+    display: none;
+  }
+
+  .track-row .col-grip,
+  .track-row .col-artist,
+  .track-row .col-album,
+  .track-row .col-duration {
+    display: none;
+  }
+
+  .track-row .col-title {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .track-row {
+    padding: 0 12px;
+  }
+
+  /* Full-screen drawers (queue + now playing). */
+  .drawer {
+    width: 100%;
+    border-left: none;
+  }
+
+  .nowplaying-drawer .np-body {
+    padding: 20px 18px;
+  }
+
+  .np-art-wrap {
+    width: min(264px, 58vw);
+    height: min(264px, 58vw);
+  }
+
+  /* Touch-first cards: the play overlay is always visible. */
+  .card-play {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Player-bar extras that make no sense on a phone. */
+  .pb-mini-btn,
+  .speed-chip {
+    display: none;
+  }
+
+  .player-bar {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .resume-banner {
+    left: 50%;
+    /* Sits above the ~120px two-row player bar and the bottom nav. */
+    bottom: calc(var(--bottomnav-h) + 128px);
+  }
+
+  .toasts {
+    top: calc(var(--topbar-h) + 10px);
+    right: 10px;
+    left: 10px;
+  }
+
+  .toast {
+    max-width: none;
+  }
+
+  .settings-grid {
+    padding: 8px 10px;
+  }
+
+  .setting-row label {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .segmented {
+    flex-wrap: wrap;
+  }
+
+  .albums-grid,
+  .playlists-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
   }
 }

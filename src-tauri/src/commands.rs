@@ -76,25 +76,39 @@ pub fn scan_library(app: AppHandle, force: bool) -> CmdResult<()> {
     trigger_scan(app, force)
 }
 
+/// Adds a music folder picked with the native folder dialog (desktop only;
+/// on Android the system folder picker is wired up in a future release).
+#[cfg_attr(target_os = "android", allow(unused_variables))]
 #[tauri::command]
 pub fn add_folder(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Option<String>> {
-    let picked = rfd::FileDialog::new()
-        .set_title("Add music folder")
-        .pick_folder();
-    let Some(path) = picked else {
+    #[cfg(target_os = "android")]
+    {
+        // Music folders are auto-discovered at startup; the button re-indexes
+        // them (picking up newly added files).
+        trigger_scan(app, true)?;
         return Ok(None);
-    };
-    let path_str = path.to_string_lossy().into_owned();
-    state.db.add_folder(&path_str).map_err(|e| e.to_string())?;
-    let mut settings = state.settings.lock().unwrap();
-    if !settings.library_folders.contains(&path_str) {
-        settings.library_folders.push(path_str.clone());
     }
-    drop(settings);
-    persist_settings(&state);
-    refresh_watcher(&app);
-    trigger_scan(app, false)?;
-    Ok(Some(path_str))
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let picked = rfd::FileDialog::new()
+            .set_title("Add music folder")
+            .pick_folder();
+        let Some(path) = picked else {
+            return Ok(None);
+        };
+        let path_str = path.to_string_lossy().into_owned();
+        state.db.add_folder(&path_str).map_err(|e| e.to_string())?;
+        let mut settings = state.settings.lock().unwrap();
+        if !settings.library_folders.contains(&path_str) {
+            settings.library_folders.push(path_str.clone());
+        }
+        drop(settings);
+        persist_settings(&state);
+        refresh_watcher(&app);
+        trigger_scan(app, false)?;
+        Ok(Some(path_str))
+    }
 }
 
 #[tauri::command]
@@ -645,77 +659,95 @@ pub fn update_smart_rules(state: State<'_, AppState>, id: i64, rules: String) ->
         .map_err(|e| e.to_string())
 }
 
+/// Exports a playlist to an M3U/PLS/XSPF file via the native save dialog
+/// (desktop only; the mobile save flow lands with the SAF integration).
+#[cfg_attr(target_os = "android", allow(unused_variables))]
 #[tauri::command]
 pub fn export_playlist(
     state: State<'_, AppState>,
     id: i64,
     format: String,
 ) -> CmdResult<Option<String>> {
-    let playlists = state.db.list_playlists().map_err(|e| e.to_string())?;
-    let playlist = playlists
-        .into_iter()
-        .find(|p| p.id == id)
-        .ok_or_else(|| "playlist not found".to_string())?;
-    let tracks = resolve_playlist(&state, id)?;
-    let ext = match format.as_str() {
-        "m3u" | "m3u8" => "m3u",
-        "pls" => "pls",
-        "xspf" => "xspf",
-        other => return Err(format!("unsupported format: {other}")),
-    };
-    let dialog = rfd::FileDialog::new()
-        .set_title("Export playlist")
-        .set_file_name(format!("{}.{}", playlist.name, ext))
-        .add_filter("Playlist", &[ext]);
-    let Some(target) = dialog.save_file() else {
-        return Ok(None);
-    };
-    harmonia_core::playlists::export_playlist(&target, &format, &playlist.name, &tracks)
-        .map_err(|e| e.to_string())?;
-    Ok(Some(target.to_string_lossy().into_owned()))
+    #[cfg(target_os = "android")]
+    return Err("exporting playlists is not supported on Android yet".into());
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let playlists = state.db.list_playlists().map_err(|e| e.to_string())?;
+        let playlist = playlists
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| "playlist not found".to_string())?;
+        let tracks = resolve_playlist(&state, id)?;
+        let ext = match format.as_str() {
+            "m3u" | "m3u8" => "m3u",
+            "pls" => "pls",
+            "xspf" => "xspf",
+            other => return Err(format!("unsupported format: {other}")),
+        };
+        let dialog = rfd::FileDialog::new()
+            .set_title("Export playlist")
+            .set_file_name(format!("{}.{}", playlist.name, ext))
+            .add_filter("Playlist", &[ext]);
+        let Some(target) = dialog.save_file() else {
+            return Ok(None);
+        };
+        harmonia_core::playlists::export_playlist(&target, &format, &playlist.name, &tracks)
+            .map_err(|e| e.to_string())?;
+        Ok(Some(target.to_string_lossy().into_owned()))
+    }
 }
 
+/// Imports an M3U playlist picked with the native file dialog (desktop only;
+/// the mobile import flow lands with the SAF integration).
+#[cfg_attr(target_os = "android", allow(unused_variables))]
 #[tauri::command]
 pub fn import_playlist(state: State<'_, AppState>, app: AppHandle) -> CmdResult<Option<i64>> {
-    let Some(source) = rfd::FileDialog::new()
-        .set_title("Import playlist")
-        .add_filter("Playlists", &["m3u", "m3u8"])
-        .pick_file()
-    else {
-        return Ok(None);
-    };
-    let paths = harmonia_core::playlists::import_m3u(&source).map_err(|e| e.to_string())?;
-    let matched = harmonia_core::playlists::match_imported_paths(&state.db, &paths)
-        .map_err(|e| e.to_string())?;
-    if matched.is_empty() {
+    #[cfg(target_os = "android")]
+    return Err("importing playlists is not supported on Android yet".into());
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let Some(source) = rfd::FileDialog::new()
+            .set_title("Import playlist")
+            .add_filter("Playlists", &["m3u", "m3u8"])
+            .pick_file()
+        else {
+            return Ok(None);
+        };
+        let paths = harmonia_core::playlists::import_m3u(&source).map_err(|e| e.to_string())?;
+        let matched = harmonia_core::playlists::match_imported_paths(&state.db, &paths)
+            .map_err(|e| e.to_string())?;
+        if matched.is_empty() {
+            toast(
+                &app,
+                "No tracks from the playlist are in your library",
+                "info",
+            );
+            return Ok(None);
+        }
+        let name = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Imported")
+            .to_string();
+        let id = state
+            .db
+            .create_playlist(&name, "static", None)
+            .map_err(|e| e.to_string())?;
+        for (_, track) in &matched {
+            state
+                .db
+                .add_track_to_playlist(id, track.id)
+                .map_err(|e| e.to_string())?;
+        }
         toast(
             &app,
-            "No tracks from the playlist are in your library",
-            "info",
+            format!("Imported {} tracks into \"{name}\"", matched.len()),
+            "success",
         );
-        return Ok(None);
+        Ok(Some(id))
     }
-    let name = source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Imported")
-        .to_string();
-    let id = state
-        .db
-        .create_playlist(&name, "static", None)
-        .map_err(|e| e.to_string())?;
-    for (_, track) in &matched {
-        state
-            .db
-            .add_track_to_playlist(id, track.id)
-            .map_err(|e| e.to_string())?;
-    }
-    toast(
-        &app,
-        format!("Imported {} tracks into \"{name}\"", matched.len()),
-        "success",
-    );
-    Ok(Some(id))
 }
 
 // ---------------------------------------------------------------------------
@@ -837,6 +869,15 @@ pub fn get_audio_devices() -> CmdResult<Vec<String>> {
 
 #[tauri::command]
 pub fn set_mini_player(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    // The mini player is a desktop window mode; there is no window on Android.
+    #[cfg(target_os = "android")]
+    {
+        let _ = (app, state, enabled);
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
     // Flip the mode flag BEFORE resizing: window resize events are dispatched
     // asynchronously, and the geometry-save handler skips while the mini flag
     // is set — so the 420x150 mini size can never overwrite the remembered
@@ -871,6 +912,7 @@ pub fn set_mini_player(app: AppHandle, state: State<'_, AppState>, enabled: bool
     }
     let _ = app.emit("ui://mini", enabled);
     Ok(())
+    }
 }
 
 /// Fully quits the application, bypassing close-to-tray. Called from the

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { FolderPlus, Loader2, Search, RefreshCw } from "lucide-react";
+import { FolderPlus, Loader2, Menu, Search, RefreshCw } from "lucide-react";
 import { useApp } from "../store";
 import * as api from "../api";
 import type { ScanProgress } from "../types";
 
-export function TopBar() {
+export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const { t, navigate, pushToast } = useApp();
   const [query, setQuery] = useState("");
   const [scan, setScan] = useState<ScanProgress | null>(null);
@@ -38,6 +38,9 @@ export function TopBar() {
 
   return (
     <header className="topbar">
+      <button className="icon-btn topbar-menu" title={t("nav.menu")} onClick={onMenu}>
+        <Menu size={18} />
+      </button>
       <div className="search-box">
         <Search size={16} className="search-icon" />
         <input

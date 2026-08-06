@@ -177,6 +177,10 @@ export const WINDOWS_CHECKS = [
  * the full Linux set.
  */
 export function checksForPlatform(platform = process.platform) {
+  // Android builds run the same `beforeBuildCommand` but need none of the
+  // Linux desktop packages (no WebKitGTK, no ALSA — the NDK supplies the C
+  // toolchain). The release workflow sets this when building the APK/AAB.
+  if (process.env.HARMONIA_BUILD_ANDROID === "1") return [];
   return platform === "win32" ? WINDOWS_CHECKS : CHECKS;
 }
 

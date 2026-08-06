@@ -44,6 +44,21 @@ sudo apt install ./harmonia_*.deb
 This installs the binary, desktop entry, icons, and MIME associations
 (`audio/*`). Launch from your application menu or run `harmonia`.
 
+### Android
+
+Download the `*-universal-release.apk` from the [releases page](../../releases)
+and side-load it — enable *Install unknown apps* for the app you download
+with (browser / file manager). Harmonia requires **Android 8.0+ (API 26)**
+(the audio engine's Android backend needs AAudio, which ships with API 26).
+
+On first launch the app requests access to your music library (scoped
+storage) and notifications. It then indexes the standard shared music
+folders (Music, Download) and re-scans when you tap *Add folder*. Declining
+the permission just leaves the library empty — nothing breaks.
+
+Folder picking via the system picker (SAF) and automatic discovery of the
+whole media store are planned for v0.1.3.
+
 ## Building from source
 
 ### Requirements
@@ -201,6 +216,33 @@ cargo tauri build                         # equivalent to npm run tauri build
 - Bundle step fails with `fakeroot` errors → install `fakeroot` (Debian/Ubuntu).
 - `AppImage ... fuse: device not found` → install `libfuse2` or set
   `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+### Building the Android app
+
+You need the [Android SDK + NDK](https://tauri.app/start/prerequisites/#android)
+(`ANDROID_HOME` set, NDK r26b or newer) and a JDK 17+:
+
+```bash
+# One-time: install the Rust Android targets
+rustup target add aarch64-linux-android armv7-linux-androideabi \
+  i686-linux-android x86_64-linux-android
+
+# Development build on a connected device/emulator
+npm run tauri -- android dev
+
+# Release APK (+ AAB for a future Play Store release)
+HARMONIA_BUILD_ANDROID=1 npm run tauri -- android build --apk --aab
+```
+
+Outputs (universal, all ABIs):
+
+- `src-tauri/gen/android/app/build/outputs/apk/universal/release/` — APK
+- `src-tauri/gen/android/app/build/outputs/bundle/release/` — AAB
+
+The release APK is signed with the Android debug key, which is fine for
+side-loading. For the Play Store, configure a release keystore (see the
+Tauri mobile documentation). The CI `package-android` / release jobs build
+the APK on every push and release.
 
 ## Building without a display / headless CI
 

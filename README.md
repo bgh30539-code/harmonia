@@ -5,7 +5,7 @@
 <h1 align="center">Harmonia</h1>
 
 <p align="center">
-  A fast, beautiful, modern music player for Linux and Windows.<br />
+  A fast, beautiful, modern music player for Linux, Windows and Android.<br />
   <i>Rust · Tauri 2 · React · rodio — Spotify meets Foobar2000, at 50 MB of RAM.</i>
 </p>
 
@@ -75,9 +75,26 @@
 - Linux: desktop file, MIME associations, AppImage + `.deb` bundles
 - Windows: NSIS installer (`.exe`) with Start Menu/desktop shortcuts,
   uninstaller and MP3/FLAC/OGG/WAV/M4A file associations, plus a portable exe
+- Android: responsive bottom-navigation UI, media/notification permissions,
+  universal APK + AAB release builds
 - English & Spanish localization
 
 ## Installation
+
+### Android
+
+Download the `*-universal-release.apk` from the [releases page](../../releases)
+and side-load it (enable *Install unknown apps* for your browser or file
+manager). Requires Android 8.0+ (API 26).
+
+On first launch Harmonia asks for permission to read your music library
+(scoped storage) and to show track-change notifications. It then indexes the
+standard shared music folders (Music, Download); use the *Add folder* button
+to re-scan for new files.
+
+> Background playback with notification/lock-screen controls, folder picking
+> via the system picker (SAF) and automatic media-store discovery are on the
+> roadmap (v0.1.3); for now playback continues only while the app is open.
 
 ### Windows
 

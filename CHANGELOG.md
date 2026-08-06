@@ -9,6 +9,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Initial release candidate.
 
+## [0.1.2] - 2026-08-06
+
+### Added
+- **Android support (first official build)** — the same Harmonia codebase
+  now compiles and runs on Android: MP3, FLAC, WAV, OGG and M4A playback via
+  the existing audio engine, plus library browsing (albums, artists,
+  playlists, favorites, recently played), search, queue, settings and themes.
+- **Responsive mobile UI** — Material-style bottom navigation, a slide-in
+  sidebar on phones, full-screen player and queue drawers, simplified track
+  tables, touch-first album cards and safe-area handling. The desktop app
+  inherits the same responsive behaviour in narrow windows.
+- **Android permissions** — runtime requests for media-library access
+  (scoped storage, API 24–32 vs 33+) and track-change notifications; the app
+  degrades gracefully when the user declines.
+- **Android packaging pipeline** — CI builds a universal APK and an AAB and
+  attaches both to every release, alongside the Linux and Windows bundles.
+
+### Changed
+- Desktop-only integrations (system tray, global media keys, single-instance
+  guard) are now `cfg`-gated so the same crate builds for Android.
+- The release workflow builds and uploads Android artifacts before the draft
+  release is published, so every release ships the complete artifact set.
+
+### Known limitations (Android)
+- Background playback with notification/lock-screen/bluetooth controls and
+  audio-focus handling needs a native media session; scheduled for v0.1.3.
+- v0.1.2 auto-indexes the standard shared music folders (Music, Download)
+  instead of full media-store discovery; folder picking via the system
+  picker (SAF) is also scheduled for v0.1.3.
+
 ## [0.1.1] - 2026-08-06
 
 ### Fixed
@@ -78,6 +108,7 @@ Windows).
 - **Quality**: unit tests for core, clippy-clean, formatted, CI pipeline with
   automated bundle builds.
 
-[Unreleased]: https://github.com/bgh30539-code/harmonia/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/bgh30539-code/harmonia/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/bgh30539-code/harmonia/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bgh30539-code/harmonia/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bgh30539-code/harmonia/releases/tag/v0.1.0
