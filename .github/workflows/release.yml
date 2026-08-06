@@ -1,0 +1,134 @@
+name: Release
+
+# Build production bundles on version tags and publish them to a *draft*
+# GitHub release. The maintainer reviews and hits "Publish" when ready.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  # Required to create the release and upload bundle assets.
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+# A re-pushed/force-pushed tag should cancel any in-flight run for it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (tests, clippy, fmt, frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt -p harmonia-core --check
+
+      - name: Lint
+        run: cargo clippy -p harmonia-core -- -D warnings
+
+      - name: Test
+        run: cargo test -p harmonia-core
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        run: npm run build
+
+  release:
+    name: Build bundles & publish draft release
+    runs-on: ubuntu-22.04
+    needs: verify
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Fail fast if the tag doesn't match the packaged version, so a release
+      # never ships bundles stamped with the wrong version number.
+      - name: Verify tag matches package version
+        run: |
+          CONF_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$CONF_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag 'v${TAG_VERSION}' does not match version '${CONF_VERSION}' in src-tauri/tauri.conf.json. Bump the version before tagging."
+            exit 1
+          fi
+
+      - name: Build bundles (AppImage + deb)
+        run: npm run tauri build -- --bundles appimage,deb
+
+      # Extract this version's section from the Keep-a-Changelog file; fall
+      # back to a pointer if the section is missing or empty.
+      - name: Generate release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Capture the "## [x.y.z]" section up to the next "## [" header
+          # (awk string "\\[\" compiles to a literal-bracket regex).
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { section = 1; next }
+            section && $0 ~ "^## \\[" { section = 0 }
+            section && NF { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "See the [CHANGELOG](CHANGELOG.md) for a summary of changes in this release." > release-notes.md
+          fi
+
+      - name: Publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: "Harmonia ${{ github.ref_name }}"
+          body_path: release-notes.md
+          files: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/harmonia
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

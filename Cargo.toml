@@ -1,0 +1,24 @@
+[workspace]
+members = ["harmonia-core", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Harmonia contributors"]
+
+# Shared build profiles. The release profile trades compile time for a small,
+# fast binary: LTO + single codegen unit + stripped symbols.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 2

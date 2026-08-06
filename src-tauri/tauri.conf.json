@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Harmonia",
+  "version": "0.1.0",
+  "identifier": "dev.harmonia.player",
+  "build": {
+    "beforeDevCommand": "npm run check:system && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run check:system && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Harmonia",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 940,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "category": "Music",
+    "shortDescription": "A modern music player for Linux",
+    "longDescription": "Harmonia is a fast, beautiful, keyboard-friendly music player for Linux. It scans your library, plays MP3, FLAC, OGG, AAC, WAV and M4A files with gapless playback and ReplayGain, and integrates with the desktop via tray icon, media keys and notifications.",
+    "linux": {
+      "deb": {
+        "depends": ["libasound2"],
+        "files": {}
+      }
+    }
+  }
+}

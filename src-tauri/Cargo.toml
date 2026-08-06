@@ -1,0 +1,30 @@
+[package]
+name = "harmonia"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "A modern, fast, beautiful music player for Linux"
+default-run = "harmonia"
+
+[lib]
+name = "harmonia_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+harmonia-core = { path = "../harmonia-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+rodio = { version = "0.22", features = ["default", "symphonia-all"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+env_logger = "0.11"
+base64 = "0.22"
+rand = "0.8"
+rfd = "0.17"
+thiserror = "2"

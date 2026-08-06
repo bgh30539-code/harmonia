@@ -1,0 +1,17 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Node
+/node_modules
+/dist
+npm-debug.log*
+
+# Tauri generated
+/src-tauri/gen/schemas
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,23 @@
+[package]
+name = "harmonia-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core library of the Harmonia music player: database, metadata, scanning, playlists, search and DSP primitives."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+lofty = "0.24"
+walkdir = "2"
+rayon = "1"
+notify = "8"
+sha2 = "0.10"
+percent-encoding = "2"
+thiserror = "2"
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
