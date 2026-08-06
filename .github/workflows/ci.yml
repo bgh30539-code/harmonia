@@ -101,3 +101,34 @@ jobs:
             target/release/bundle/deb/*.deb
             target/release/harmonia
           if-no-files-found: error
+
+  package-windows:
+    name: Package (NSIS installer + portable exe)
+    runs-on: windows-latest
+    needs: [core, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Windows bundles (NSIS)
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmonia-windows-bundles
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/harmonia.exe
+          if-no-files-found: error

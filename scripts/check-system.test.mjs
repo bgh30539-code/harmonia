@@ -11,7 +11,9 @@ import assert from "node:assert/strict";
 import {
   APT_PACKAGES,
   CHECKS,
+  WINDOWS_CHECKS,
   aptCommand,
+  checksForPlatform,
   missing,
   probes,
   runCheck,
@@ -129,6 +131,43 @@ test("JSON mode: advisory-only missing still reports ok true", (t) => {
   const fakeroot = parsed.missing.find((m) => m.id === "fakeroot");
   assert.ok(fakeroot, "fakeroot should be listed as missing");
   assert.equal(fakeroot.required, false);
+});
+
+test("checksForPlatform selects the Windows set on win32", () => {
+  assert.deepEqual(checksForPlatform("win32"), WINDOWS_CHECKS);
+  assert.deepEqual(checksForPlatform("linux"), CHECKS);
+  assert.notEqual(WINDOWS_CHECKS, CHECKS);
+  // Windows checks never reference Linux-only tools.
+  for (const c of WINDOWS_CHECKS) {
+    assert.ok(c.required, "Windows checks are all required");
+  }
+});
+
+test("Windows platform passes when node/npm exist, with no apt advice", (t) => {
+  t.mock.method(probes, "hasCommand", (cmd) => cmd === "node" || cmd === "npm");
+  const { output, exitCode } = runCheck({ platform: "win32" });
+  assert.equal(exitCode, 0);
+  assert.match(output, /All Harmonia system dependencies are present/);
+  assert.doesNotMatch(output, /apt-get/);
+  assert.doesNotMatch(output, /webkit|alsa|appindicator/i);
+});
+
+test("Windows platform fails with Windows hints when node/npm are missing", (t) => {
+  t.mock.method(probes, "hasCommand", () => false);
+  const { output, exitCode } = runCheck({ platform: "win32" });
+  assert.equal(exitCode, 1);
+  assert.match(output, /missing required prerequisites on Windows/);
+  assert.match(output, /Node\.js/);
+  assert.doesNotMatch(output, /sudo apt/);
+});
+
+test("Windows JSON mode reports no apt install command", (t) => {
+  t.mock.method(probes, "hasCommand", () => true);
+  const { output, exitCode } = runCheck({ platform: "win32", json: true });
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.installCommand, "");
 });
 
 test("HARMONIA_PKG_CONFIG override is honoured", (t) => {

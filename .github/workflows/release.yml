@@ -1,7 +1,8 @@
 name: Release
 
-# Build production bundles on version tags and publish them to a *draft*
-# GitHub release. The maintainer reviews and hits "Publish" when ready.
+# Build production bundles on version tags and publish them to a GitHub
+# release with Linux (.deb, AppImage) and Windows (.exe installer, portable
+# executable) artifacts.
 on:
   push:
     tags:
@@ -56,7 +57,7 @@ jobs:
         run: npm run build
 
   release:
-    name: Build bundles & publish draft release
+    name: Build Linux bundles & publish release
     runs-on: ubuntu-22.04
     needs: verify
     timeout-minutes: 60
@@ -110,7 +111,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           # Capture the "## [x.y.z]" section up to the next "## [" header
-          # (awk string "\\[\" compiles to a literal-bracket regex).
+          # (awk string "\\[" compiles to a literal-bracket regex).
           awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { section = 1; next }
             section && $0 ~ "^## \\[" { section = 0 }
@@ -120,11 +121,14 @@ jobs:
             echo "See the [CHANGELOG](CHANGELOG.md) for a summary of changes in this release." > release-notes.md
           fi
 
-      - name: Publish draft release
+      # Create the release as a DRAFT. The Windows job (which runs after this
+      # one) uploads the .exe artifacts and flips it to published — so the
+      # release only ever becomes visible with the complete artifact set.
+      - name: Create draft release (Linux artifacts)
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          name: "Harmonia ${{ github.ref_name }}"
+          name: "Harmonia ${{ github.ref_name }} - Microslop Update + Bug Fixes"
           body_path: release-notes.md
           # Cargo workspace root is the repo root, so bundles land in
           # target/ (not src-tauri/target/).
@@ -132,6 +136,56 @@ jobs:
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/deb/*.deb
             target/release/harmonia
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    name: Build Windows bundles (NSIS installer + portable exe)
+    runs-on: windows-latest
+    # Runs after the Linux job so the draft release exists before its assets
+    # are appended (softprops updates the existing release for this tag).
+    needs: [verify, release]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $conf = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($conf -ne $tag) {
+            Write-Error "Tag 'v$tag' does not match version '$conf' in src-tauri/tauri.conf.json"
+            exit 1
+          }
+
+      - name: Build Windows installer (NSIS)
+        run: npm run tauri build -- --bundles nsis
+
+      # Upload the NSIS installer and the raw release binary (a portable
+      # executable: it runs standalone when WebView2 is present, which it is
+      # on Windows 10/11), then publish the draft release. Name/body are left
+      # unset so softprops preserves the ones from the Linux job.
+      - name: Upload Windows artifacts & publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/harmonia.exe
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

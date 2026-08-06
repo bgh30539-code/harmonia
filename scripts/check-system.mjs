@@ -72,6 +72,11 @@ export const probes = {
 // --- check definitions ------------------------------------------------------
 // Each entry: { id, label, required, check, missingHint }
 // `required: true` fails the build; `required: false` is advisory only.
+//
+// `CHECKS` is the Linux set (pkg-config modules, WebKitGTK, ALSA, tray,
+// media-key headers). Windows has no equivalent dev-packages — the Tauri build
+// only needs Node and the MSVC toolchain (present on CI runners) — so the
+// Windows branch uses a minimal platform check. See `checksForPlatform`.
 
 export const CHECKS = [
   {
@@ -146,6 +151,35 @@ export const CHECKS = [
   },
 ];
 
+// Windows needs no Linux-style dev packages (WebView2 is bundled by Tauri and
+// the MSVC toolchain ships on the build runners), so the preflight is limited
+// to the JavaScript toolchain that gates every build.
+export const WINDOWS_CHECKS = [
+  {
+    id: "node",
+    label: "Node.js runtime",
+    required: true,
+    check: () => probes.hasCommand("node"),
+    missingHint: "Install Node.js 20+ from https://nodejs.org",
+  },
+  {
+    id: "npm",
+    label: "npm package manager",
+    required: true,
+    check: () => probes.hasCommand("npm"),
+    missingHint: "npm ships with Node.js; make sure it is on PATH.",
+  },
+];
+
+/**
+ * Returns the check set for a given platform (defaults to the running one).
+ * Windows builds are validated against `WINDOWS_CHECKS`; everything else gets
+ * the full Linux set.
+ */
+export function checksForPlatform(platform = process.platform) {
+  return platform === "win32" ? WINDOWS_CHECKS : CHECKS;
+}
+
 // --- output -----------------------------------------------------------------
 
 export function missing(checks) {
@@ -160,28 +194,34 @@ export function aptCommand(missingIds) {
   return `sudo apt-get install -y ${pkgs}`;
 }
 
-export function renderHuman(missingChecks) {
+export function renderHuman(missingChecks, platform) {
   const lines = [];
   lines.push("");
-  lines.push("Harmonia is missing required system packages.");
-  lines.push("");
-  lines.push("On Debian/Ubuntu, install them with:");
-  lines.push("");
-  lines.push(`  ${aptCommand(missingChecks.map((c) => c.id))}`);
+  if (platform === "win32") {
+    lines.push("Harmonia is missing required prerequisites on Windows.");
+  } else {
+    lines.push("Harmonia is missing required system packages.");
+    lines.push("");
+    lines.push("On Debian/Ubuntu, install them with:");
+    lines.push("");
+    lines.push(`  ${aptCommand(missingChecks.map((c) => c.id))}`);
+  }
   lines.push("");
   lines.push("Missing:");
   for (const c of missingChecks) {
     lines.push(`  - ${c.label} (${c.missingHint})`);
   }
   lines.push("");
-  lines.push(
-    "See docs/INSTALL.md for Fedora/Arch package equivalents and the full guide.",
-  );
+  if (platform !== "win32") {
+    lines.push(
+      "See docs/INSTALL.md for Fedora/Arch package equivalents and the full guide.",
+    );
+  }
   lines.push("");
   return lines.join("\n");
 }
 
-export function renderJson(missingChecks, ok) {
+export function renderJson(missingChecks, ok, platform) {
   return JSON.stringify(
     {
       ok,
@@ -191,7 +231,8 @@ export function renderJson(missingChecks, ok) {
         hint: c.missingHint,
         required: c.required,
       })),
-      installCommand: aptCommand(missingChecks.map((c) => c.id)),
+      installCommand:
+        platform === "win32" ? "" : aptCommand(missingChecks.map((c) => c.id)),
     },
     null,
     2,
@@ -202,11 +243,14 @@ export function renderJson(missingChecks, ok) {
  * Runs the checks and returns `{ output, exitCode }` without touching
  * `process`, so it is directly unit-testable.
  *
- * @param {{ json?: boolean }} [options]
+ * @param {{ json?: boolean, platform?: NodeJS.Platform }} [options]
+ *        `platform` overrides `process.platform` (used by tests).
  */
 export function runCheck(options = {}) {
   const json = Boolean(options.json);
-  const missingChecks = missing(CHECKS);
+  const platform = options.platform ?? process.platform;
+  const activeChecks = checksForPlatform(platform);
+  const missingChecks = missing(activeChecks);
   const requiredMissing = missingChecks.filter((c) => c.required);
 
   // A non-zero exit is what stops the `&&` chain in tauri.conf.json, so it
@@ -215,9 +259,9 @@ export function runCheck(options = {}) {
 
   let output;
   if (json) {
-    output = renderJson(missingChecks, requiredMissing.length === 0);
+    output = renderJson(missingChecks, requiredMissing.length === 0, platform);
   } else if (requiredMissing.length > 0) {
-    output = renderHuman(requiredMissing);
+    output = renderHuman(requiredMissing, platform);
   } else {
     const advisories = missingChecks.filter((c) => !c.required);
     if (advisories.length > 0) {
