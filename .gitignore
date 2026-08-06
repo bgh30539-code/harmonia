@@ -15,3 +15,10 @@ npm-debug.log*
 *.swp
 .idea/
 .vscode/
+
+# Logs / env
+*.log
+.env
+
+# Test coverage
+coverage/

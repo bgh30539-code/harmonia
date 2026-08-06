@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f0d17"/>
+      <stop offset="0.55" stop-color="#1a1430"/>
+      <stop offset="1" stop-color="#231a44"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#b388ff"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#c9bcff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#7c5cff" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#7c5cff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+
+  <!-- logo tile -->
+  <rect x="560" y="120" width="160" height="160" rx="40" fill="url(#accent)"/>
+  <g>
+    <rect x="600" y="180" width="16" height="48" rx="8" fill="#ffffff"/>
+    <rect x="632" y="158" width="16" height="84" rx="8" fill="#ffffff"/>
+    <rect x="664" y="172" width="16" height="64" rx="8" fill="#ffffff"/>
+  </g>
+
+  <text x="640" y="360" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="96" font-weight="bold" fill="#ffffff">Harmonia</text>
+  <text x="640" y="420" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="30" fill="#b9b0d8">The fast, beautiful, open-source music player</text>
+  <text x="640" y="462" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="30" fill="#b9b0d8">for Linux · Windows · Android</text>
+
+  <g font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="bold" fill="#ffffff">
+    <rect x="390" y="500" width="140" height="52" rx="26" fill="#7c5cff"/>
+    <text x="460" y="533" text-anchor="middle">Linux</text>
+    <rect x="560" y="500" width="168" height="52" rx="26" fill="#7c5cff"/>
+    <text x="644" y="533" text-anchor="middle">Windows</text>
+    <rect x="758" y="500" width="152" height="52" rx="26" fill="#7c5cff"/>
+    <text x="834" y="533" text-anchor="middle">Android</text>
+  </g>
+</svg>

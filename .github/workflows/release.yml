@@ -121,6 +121,45 @@ jobs:
             echo "See the [CHANGELOG](CHANGELOG.md) for a summary of changes in this release." > release-notes.md
           fi
 
+      # Append installation + verification sections so every release page
+      # carries the full picture, not just the changelog.
+      - name: Append installation instructions to release notes
+        run: |
+          cat >> release-notes.md <<'EOF'
+
+          ---
+
+          ## Installation
+
+          - **Linux**: `sudo apt install ./Harmonia_*.deb`, or run the AppImage (`chmod +x Harmonia-*.AppImage`)
+          - **Windows**: run `Harmonia-*_setup.exe`, or the portable `harmonia.exe`
+          - **Android**: side-load `app-universal-release.apk` (Android 8.0+ / API 26)
+
+          See [docs/INSTALL.md](https://github.com/bgh30539-code/harmonia/blob/main/docs/INSTALL.md) for details.
+
+          ## Verify downloads
+
+          SHA-256 checksums for every artifact are published alongside this release as `SHA256SUMS-*` files. Verify with:
+
+          ```bash
+          sha256sum -c SHA256SUMS-linux.txt
+          ```
+
+          ## Supported platforms
+
+          | Platform | Artifacts |
+          | --- | --- |
+          | Linux | .deb, AppImage, raw binary |
+          | Windows | NSIS installer, portable exe |
+          | Android | Universal APK, AAB |
+          EOF
+
+      - name: Generate Linux checksums
+        run: |
+          sha256sum target/release/bundle/appimage/*.AppImage \
+                    target/release/bundle/deb/*.deb \
+                    target/release/harmonia > SHA256SUMS-linux.txt
+
       # Create the release as a DRAFT. The Windows job (which runs after this
       # one) uploads the .exe artifacts and flips it to published — so the
       # release only ever becomes visible with the complete artifact set.
@@ -128,7 +167,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          name: "Harmonia ${{ github.ref_name }} — Reject Apple Update"
+          name: "Harmonia ${{ github.ref_name }}"
           body_path: release-notes.md
           # Cargo workspace root is the repo root, so bundles land in
           # target/ (not src-tauri/target/).
@@ -136,6 +175,7 @@ jobs:
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/deb/*.deb
             target/release/harmonia
+            SHA256SUMS-linux.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -192,6 +232,11 @@ jobs:
         # with LTO would blow past the job timeout on a cold cache.
         run: npm run tauri -- android build --apk --aab --target aarch64 x86_64
 
+      - name: Generate Android checksums
+        run: |
+          sha256sum src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk \
+                    src-tauri/gen/android/app/build/outputs/bundle/release/*.aab > SHA256SUMS-android.txt
+
       # Append the APK/AAB to the draft release created by the Linux job.
       - name: Upload Android artifacts to release
         uses: softprops/action-gh-release@v2
@@ -199,6 +244,7 @@ jobs:
           files: |
             src-tauri/gen/android/app/build/outputs/**/*.apk
             src-tauri/gen/android/app/build/outputs/**/*.aab
+            SHA256SUMS-android.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -239,6 +285,13 @@ jobs:
       - name: Build Windows installer (NSIS)
         run: npm run tauri build -- --bundles nsis
 
+      - name: Generate Windows checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem target/release/bundle/nsis/*-setup.exe, target/release/harmonia.exe |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash, $_.Name } |
+            Set-Content SHA256SUMS-windows.txt
+
       # Upload the NSIS installer and the raw release binary (a portable
       # executable: it runs standalone when WebView2 is present, which it is
       # on Windows 10/11), then publish the draft release. Name/body are left
@@ -250,6 +303,7 @@ jobs:
           files: |
             target/release/bundle/nsis/*-setup.exe
             target/release/harmonia.exe
+            SHA256SUMS-windows.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

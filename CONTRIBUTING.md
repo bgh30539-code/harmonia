@@ -11,7 +11,7 @@ tolerated.
 
 ## What to work on
 
-- Check the [Roadmap](ROADMAP.md) for planned work.
+- Check the [Roadmap](docs/ROADMAP.md) for planned work.
 - Look for `help wanted`-style gaps: missing tests, untranslated strings,
   missing docs, performance hot spots.
 - **File an issue first** for anything bigger than a bugfix so we can agree on
@@ -20,7 +20,7 @@ tolerated.
 ## Getting started
 
 1. Fork and clone the repo.
-2. Follow [DEVELOPMENT.md](DEVELOPMENT.md) to set up your environment.
+2. Follow [DEVELOPMENT.md](docs/DEVELOPMENT.md) to set up your environment.
 3. Create a branch: `git checkout -b feat/my-change`.
 
 ## Code style
@@ -66,4 +66,4 @@ If you touch the audio engine or scanner, add unit tests for the core logic.
 ## License
 
 By contributing you agree that your contributions are licensed under the MIT
-License, as described in [LICENSE](../LICENSE).
+License, as described in [LICENSE](LICENSE).

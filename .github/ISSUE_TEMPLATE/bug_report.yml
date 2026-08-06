@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a problem with Harmonia
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please check the
+        [troubleshooting section](https://github.com/bgh30539-code/harmonia#troubleshooting)
+        and search existing issues first.
+  - type: input
+    id: version
+    attributes:
+      label: Harmonia version
+      description: e.g. v0.1.2 (see the About / release page)
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (deb / AppImage)
+        - Windows (installer / portable)
+        - Android (APK)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect to happen, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce the problem from a clean state?
+      placeholder: |
+        1. Open the library
+        2. Double-click track X
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: |
+        Any relevant log output (stderr or the log file in the app-data
+        directory) or screenshots. You can attach images by dragging them here.

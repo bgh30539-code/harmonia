@@ -38,7 +38,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./Harmonia-*.AppImage
 ### Debian package
 
 ```bash
-sudo apt install ./harmonia_*.deb
+sudo apt install ./Harmonia_*.deb
 ```
 
 This installs the binary, desktop entry, icons, and MIME associations
@@ -239,10 +239,14 @@ Outputs (universal, all ABIs):
 - `src-tauri/gen/android/app/build/outputs/apk/universal/release/` — APK
 - `src-tauri/gen/android/app/build/outputs/bundle/release/` — AAB
 
-The release APK is signed with the Android debug key, which is fine for
-side-loading. For the Play Store, configure a release keystore (see the
-Tauri mobile documentation). The CI `package-android` / release jobs build
-the APK on every push and release.
+Release APKs are signed with the project's **FOSS release keystore**, which is
+committed to the repository (`src-tauri/gen/android/app/harmonia-release.jks`
+together with `keystore.properties`) so that local builds and CI produce
+installable, update-consistent artifacts — the same approach used by other
+open-source Android apps (e.g. NewPipe). This is fine for side-loading.
+
+Before distributing through Google Play, replace the committed key with a
+private keystore whose credentials live in GitHub secrets, never in the repo.
 
 ## Building without a display / headless CI
 
