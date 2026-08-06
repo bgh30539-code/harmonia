@@ -5,7 +5,7 @@
 <h1 align="center">Harmonia</h1>
 
 <p align="center">
-  A fast, beautiful, modern music player for Linux.<br />
+  A fast, beautiful, modern music player for Linux and Windows.<br />
   <i>Rust · Tauri 2 · React · rodio — Spotify meets Foobar2000, at 50 MB of RAM.</i>
 </p>
 
@@ -70,13 +70,27 @@
 - MPRIS media key integration (desktop-wide media keys)
 - Global shortcuts (in-app: space, arrows, Ctrl+F, M…)
 - Mini player mode
-- Notifications on track change
-- Desktop file, MIME associations, AppImage + `.deb` bundles
+- Desktop notifications on track change
+- Window size/position remembered across launches; last opened section restored
+- Linux: desktop file, MIME associations, AppImage + `.deb` bundles
+- Windows: NSIS installer (`.exe`) with Start Menu/desktop shortcuts,
+  uninstaller and MP3/FLAC/OGG/WAV/M4A file associations, plus a portable exe
 - English & Spanish localization
 
 ## Installation
 
-### From a release
+### Windows
+
+Download `Harmonia-*-setup.exe` from the [releases page](../../releases) and
+run it — the installer adds a Start Menu shortcut (and optionally a desktop
+shortcut) plus an uninstaller, and registers MP3/FLAC/OGG/WAV/M4A file
+associations so double-clicking a music file opens it in Harmonia.
+
+Prefer a portable copy? Grab the standalone `harmonia.exe` from the same
+release — it runs without installing (Windows 10/11 already ship the WebView2
+runtime it uses).
+
+### Linux
 
 1. Grab the latest `.AppImage` or `.deb` from the [releases page](../../releases).
 
@@ -92,9 +106,12 @@ sudo apt install ./harmonia_*.deb
 > Running AppImages on Ubuntu 22.04+ requires `libfuse2`:
 > `sudo apt install libfuse2` — or set `APPIMAGE_EXTRACT_AND_RUN=1`.
 
+The `.deb` installs the binary, desktop entry, icons and MIME associations
+(`audio/*`); launch from your application menu or run `harmonia`.
+
 ### From source
 
-See [docs/INSTALL.md](docs/INSTALL.md) for a full guide, including the system packages needed to build.
+See [docs/INSTALL.md](docs/INSTALL.md) for a full guide, including the system packages needed to build on Linux and the Windows build steps.
 
 ```bash
 # 1. System dependencies (Debian/Ubuntu)

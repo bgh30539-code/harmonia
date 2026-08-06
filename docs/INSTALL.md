@@ -2,6 +2,22 @@
 
 ## Binary releases
 
+### Windows
+
+Download `Harmonia-*-setup.exe` from the [releases page](../../releases) and
+run it. The NSIS installer:
+
+- adds a **Start Menu shortcut** under *Harmonia* and a **desktop shortcut**
+  automatically;
+- registers an **uninstaller** (via *Settings → Apps* or the Start Menu);
+- registers **file associations** for `mp3`, `flac`, `ogg`, `opus`, `wav`,
+  `m4a`, `aac` — double-clicking a music file opens it in Harmonia (files are
+  imported into your library).
+
+Prefer a **portable** copy? Download the standalone `harmonia.exe` from the
+same release and run it directly — no installation required. It uses the
+WebView2 runtime, which ships with Windows 10/11.
+
 ### AppImage
 
 ```bash
@@ -37,6 +53,25 @@ This installs the binary, desktop entry, icons, and MIME associations
 | Rust | 1.77+ (stable) |
 | Node.js | 20+ |
 | npm | 9+ |
+
+**Windows** additionally needs the [Microsoft C++ Build
+Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (MSVC
+toolchain, included on GitHub's `windows-latest` runners).
+
+### Building on Windows
+
+```powershell
+# 1. Install the MSVC toolchain (Visual Studio Build Tools) and Node.js 20+.
+#    WebView2 is bundled by Tauri; Windows 10/11 already ship the runtime.
+
+# 2. Install JavaScript deps and build the NSIS installer + portable exe.
+npm install
+npm run tauri build -- --bundles nsis
+
+# 3. Outputs:
+#    target\release\bundle\nsis\Harmonia-*-setup.exe   (installer)
+#    target\release\harmonia.exe                        (portable binary)
+```
 
 ### System packages
 
@@ -98,7 +133,7 @@ sudo pacman -S webkit2gtk-4.1 base-devel openssl libxdo \
 > should print `ok`; `ls /usr/include/alsa/asoundlib.h` should exist. If not,
 > reinstall the dev packages above (or reboot if you just installed them).
 
-### Build
+### Build (Linux)
 
 `npm run tauri build` produces:
 
@@ -107,7 +142,7 @@ sudo pacman -S webkit2gtk-4.1 base-devel openssl libxdo \
 - `release/harmonia` (raw binary)
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the release process (tag → CI builds
-the bundles).
+the bundles for both Linux and Windows).
 
 ## First build, step by step
 
